@@ -22,7 +22,7 @@ interface ListingCardProps {
 
 export default function ListingCard({ data }: ListingCardProps) {
   return (
-    <Link href={`/room/${data.id}`} className="block h-full">
+    <Link href={`/room?id=${data.id}`} className="block h-full">
       <div className="group cursor-pointer h-full flex flex-col">
         <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-200 mb-3">
           <Image
