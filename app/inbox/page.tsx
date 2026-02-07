@@ -5,7 +5,6 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
-// Type pour une conversation
 type Conversation = {
   id: string
   updated_at: string
@@ -15,7 +14,7 @@ type Conversation = {
   }
   other_user: {
     id: string
-    email: string // On utilise l'email faute de nom dans la table auth
+    email: string
   }
   last_message: string
 }
@@ -34,9 +33,7 @@ export default function InboxPage() {
         return
       }
 
-      // 1. Récupérer les convos brutes
-      // Note: Supabase JS ne permet pas les jointures complexes facilement sans Views
-      // On fait simple : on récupère tout et on filtre
+      // 1. Récupérer les convos
       const { data: convos, error } = await supabase
         .from('conversations')
         .select(`
@@ -54,7 +51,6 @@ export default function InboxPage() {
         console.error('Erreur chargement convos:', error)
       } else if (convos) {
         // 2. Formater pour l'affichage
-        // Pour chaque convo, on doit savoir "qui est l'autre"
         const formatted = convos.map((c: any) => {
           const isMeParticipant1 = c.participant1_id === user.id
           const otherUserId = isMeParticipant1 ? c.participant2_id : c.participant1_id
@@ -66,8 +62,8 @@ export default function InboxPage() {
               title: c.listings?.title || 'Logement inconnu',
               images: c.listings?.images || []
             },
-            other_user: { id: otherUserId, email: 'Utilisateur' }, // Simplifié
-            last_message: 'Cliquez pour lire' // Idéalement on fetch le dernier msg
+            other_user: { id: otherUserId, email: 'Utilisateur' },
+            last_message: 'Cliquez pour lire'
           }
         })
         setConversations(formatted)
@@ -101,10 +97,11 @@ export default function InboxPage() {
             {conversations.map((convo) => (
               <Link 
                 key={convo.id} 
-                href={`/inbox/${convo.id}`}
+                // C'EST ICI QUE LE LIEN A ÉTÉ MODIFIÉ POUR POINTER VERS LA RACINE /CHAT
+                href={`/chat?id=${convo.id}`}
                 className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl transition cursor-pointer border-b border-gray-50 last:border-0"
               >
-                {/* Image du logement (Avatar) */}
+                {/* Image du logement */}
                 <div className="w-16 h-16 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0 relative">
                   {convo.listing.images[0] ? (
                     <img src={convo.listing.images[0]} className="w-full h-full object-cover" />
