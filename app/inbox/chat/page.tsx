@@ -1,153 +1,135 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
-function ChatContent() {
-  const searchParams = useSearchParams()
-  const conversationId = searchParams.get('id')
+type Conversation = {
+  id: string
+  updated_at: string
+  listing: {
+    title: string
+    images: string[]
+  }
+  other_user: {
+    id: string
+    email: string
+  }
+  last_message: string
+}
+
+export default function InboxPage() {
   const supabase = createClientComponentClient()
   const router = useRouter()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const [messages, setMessages] = useState<any[]>([])
-  const [newMessage, setNewMessage] = useState('')
-  const [userId, setUserId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 1. Charger les messages initiaux
   useEffect(() => {
-    if (!conversationId) return
-
-    const fetchMessages = async () => {
+    const fetchConversations = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      setUserId(user.id)
+      if (!user) {
+        router.push('/login')
+        return
+      }
 
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
+      // 1. Récupérer les convos
+      const { data: convos, error } = await supabase
+        .from('conversations')
+        .select(`
+          id,
+          created_at,
+          listing_id,
+          participant1_id,
+          participant2_id,
+          listings ( title, images )
+        `)
+        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
 
-      if (data) setMessages(data)
+      if (error) {
+        console.error('Erreur chargement convos:', error)
+      } else if (convos) {
+        // 2. Formater pour l'affichage
+        const formatted = convos.map((c: any) => {
+          const isMeParticipant1 = c.participant1_id === user.id
+          const otherUserId = isMeParticipant1 ? c.participant2_id : c.participant1_id
+          
+          return {
+            id: c.id,
+            updated_at: new Date(c.created_at).toLocaleDateString(),
+            listing: {
+              title: c.listings?.title || 'Logement inconnu',
+              images: c.listings?.images || []
+            },
+            other_user: { id: otherUserId, email: 'Utilisateur' },
+            last_message: 'Cliquez pour lire'
+          }
+        })
+        setConversations(formatted)
+      }
       setLoading(false)
     }
 
-    fetchMessages()
-
-    // 2. Écouter les nouveaux messages en TEMPS RÉEL (Magic!)
-    const channel = supabase
-      .channel('realtime messages')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`
-      }, (payload) => {
-        setMessages((current) => [...current, payload.new])
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [conversationId, supabase, router])
-
-  // Scroll automatique vers le bas
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // 3. Envoyer un message
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMessage.trim() || !userId || !conversationId) return
-
-    const msg = newMessage
-    setNewMessage('') // Clear input direct pour fluidité
-
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: userId,
-        content: msg
-      })
-
-    if (error) alert('Erreur envoi: ' + error.message)
-  }
-
-  if (loading) return <div className="p-4 text-center text-gray-500">Chargement de la discussion...</div>
+    fetchConversations()
+  }, [supabase, router])
 
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] bg-white">
-      {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-        <Link href="/inbox" className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-gray-600">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-          </svg>
-        </Link>
-        <div>
-          <h2 className="font-bold text-sm">Discussion</h2>
-          <p className="text-xs text-green-600">En ligne</p>
-        </div>
+    <div className="min-h-screen bg-white pb-20">
+      <div className="px-6 py-6 border-b border-gray-100">
+        <h1 className="text-2xl font-bold">Messages</h1>
       </div>
 
-      {/* Liste des Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-        {messages.map((msg) => {
-          const isMe = msg.sender_id === userId
-          return (
-            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div 
-                className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                  isMe 
-                    ? 'bg-[#FF385C] text-white rounded-br-none' 
-                    : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-                }`}
+      <div className="px-4 py-2">
+        {loading ? (
+          <div className="space-y-4 mt-4">
+            {[1,2,3].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse"></div>)}
+          </div>
+        ) : conversations.length === 0 ? (
+          <div className="text-center mt-20 text-gray-500">
+            <p className="mb-4">Aucun message pour le moment.</p>
+            <Link href="/" className="text-rose-500 font-semibold underline">
+              Explorer les logements
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-1 mt-2">
+            {conversations.map((convo) => (
+              <Link 
+                key={convo.id} 
+                // C'EST ICI QUE LE LIEN A ÉTÉ CORRIGÉ :
+                href={`/inbox/chat?id=${convo.id}`}
+                className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl transition cursor-pointer border-b border-gray-50 last:border-0"
               >
-                {msg.content}
-              </div>
-            </div>
-          )
-        })}
-        <div ref={messagesEndRef} />
+                {/* Image du logement */}
+                <div className="w-16 h-16 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0 relative">
+                  {convo.listing.images[0] ? (
+                    <img src={convo.listing.images[0]} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gray-300 flex items-center justify-center">🏠</div>
+                  )}
+                </div>
+
+                {/* Infos */}
+                <div className="flex-1 min-w-0">
+                   <div className="flex justify-between items-baseline mb-0.5">
+                      <h3 className="font-semibold text-gray-900 truncate pr-2">
+                        {convo.listing.title}
+                      </h3>
+                      <span className="text-xs text-gray-400 whitespace-nowrap">{convo.updated_at}</span>
+                   </div>
+                   <p className="text-sm text-gray-600 truncate">
+                      Conversation active
+                   </p>
+                   <p className="text-xs text-gray-400 mt-1">
+                      Statut: En attente de réponse
+                   </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Input Zone */}
-      <form onSubmit={sendMessage} className="p-3 border-t border-gray-100 bg-white flex gap-2 items-center">
-        <button type="button" className="p-2 text-gray-400 hover:bg-gray-100 rounded-full">
-           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-        </button>
-        <input 
-          type="text" 
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="Écrivez un message..."
-          className="flex-1 bg-gray-100 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
-        />
-        <button 
-          type="submit" 
-          disabled={!newMessage.trim()}
-          className="p-2.5 bg-[#FF385C] text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition hover:bg-[#d93250]"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-          </svg>
-        </button>
-      </form>
     </div>
-  )
-}
-
-export default function ChatPage() {
-  return (
-    <Suspense fallback={<div>Chargement...</div>}>
-      <ChatContent />
-    </Suspense>
   )
 }
