@@ -1,15 +1,29 @@
 'use client'
 
 import Image from 'next/image'
-import Link from 'next/link' // <--- NOUVEL IMPORT
+import Link from 'next/link'
 
-// ... (Interface ListingCardProps reste pareille)
+// C'est cette partie qui manquait !
+interface ListingCardProps {
+  data: {
+    id: string
+    title: string
+    type: string
+    location: string
+    price_per_week: number
+    image: string
+    rating: number
+    reviews_count: number
+    dates: string
+    is_superhost?: boolean
+    bond?: number
+  }
+}
 
 export default function ListingCard({ data }: ListingCardProps) {
   return (
-    // AJOUT DU LINK AUTOUR DE TOUTE LA CARTE
-    <Link href={`/room/${data.id}`}>
-      <div className="group cursor-pointer block h-full"> {/* Block h-full pour bien prendre la place */}
+    <Link href={`/room/${data.id}`} className="block h-full">
+      <div className="group cursor-pointer h-full flex flex-col">
         <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-200 mb-3">
           <Image
             src={data.image}
@@ -18,14 +32,12 @@ export default function ListingCard({ data }: ListingCardProps) {
             className="object-cover transition group-hover:scale-105"
           />
           
-          {/* Badge Superhôte */}
           {data.is_superhost && (
             <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded shadow-sm text-xs font-bold text-gray-800">
               Superhôte
             </div>
           )}
 
-          {/* Bouton Favori (Cœur) - On met preventDefault pour ne pas déclencher le lien vers la page */}
           <button 
             onClick={(e) => { e.preventDefault(); alert('Ajouté aux favoris !'); }}
             className="absolute top-3 right-3 p-2 rounded-full hover:bg-white/10 transition z-10"
