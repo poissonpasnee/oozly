@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-// On n'utilise plus useParams directement ici car ça peut planter en statique
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -12,23 +11,17 @@ const MiniMap = dynamic(() => import('@/components/Map'), {
   ssr: false 
 })
 
-export default function RoomPage() {
+// On sépare le contenu pour pouvoir utiliser Suspense (obligatoire avec useSearchParams)
+function RoomContent() {
+  const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = createClientComponentClient()
   
-  // Astuce: On récupère l'ID depuis l'URL manuellement pour éviter l'erreur de build
-  const [roomId, setRoomId] = useState<string | null>(null)
+  const roomId = searchParams.get('id') // On lit ?id=123
   
   const [room, setRoom] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [currentUser, setCurrentUser] = useState<any>(null)
-
-  useEffect(() => {
-    // On extrait l'ID de l'URL une fois côté client
-    const path = window.location.pathname
-    const id = path.split('/').pop()
-    setRoomId(id || null)
-  }, [])
 
   useEffect(() => {
     if (!roomId) return
@@ -151,5 +144,14 @@ export default function RoomPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Composant Principal avec la Suspense Boundary (OBLIGATOIRE pour le build)
+export default function RoomPage() {
+  return (
+    <Suspense fallback={<div>Chargement...</div>}>
+      <RoomContent />
+    </Suspense>
   )
 }
