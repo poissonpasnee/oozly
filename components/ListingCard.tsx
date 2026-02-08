@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-// Définition explicite des types pour éviter les erreurs TypeScript
 interface ListingCardProps {
   data: {
     id: string
@@ -15,7 +14,8 @@ interface ListingCardProps {
     rating?: number
     dates?: string
     is_superhost?: boolean
-    [key: string]: any // Permet d'autres propriétés optionnelles
+    type?: string
+    [key: string]: any
   }
 }
 
@@ -23,7 +23,6 @@ export default function ListingCard({ data }: ListingCardProps) {
   const [isFavorite, setIsFavorite] = useState(false)
 
   useEffect(() => {
-    // Vérification sécurisée du localStorage (uniquement côté client)
     if (typeof window !== 'undefined') {
       const favorites = JSON.parse(localStorage.getItem('favorites') || '[]')
       if (favorites.includes(data.id)) {
@@ -33,7 +32,7 @@ export default function ListingCard({ data }: ListingCardProps) {
   }, [data.id])
 
   const toggleFavorite = (e: React.MouseEvent) => {
-    e.preventDefault() // Empêche le clic sur le lien quand on clique sur le cœur
+    e.preventDefault()
     e.stopPropagation()
 
     const favorites = JSON.parse(localStorage.getItem('favorites') || '[]')
@@ -49,57 +48,62 @@ export default function ListingCard({ data }: ListingCardProps) {
     setIsFavorite(!isFavorite)
   }
 
-  // Fallback sécurisé pour l'affichage (évite les bugs si une info manque)
   const location = data.location || data.location_name || 'Lieu inconnu'
   const image = data.image || 'https://via.placeholder.com/600x400'
 
   return (
-    // IMPORTANT : On utilise le format Query String (?id=...) pour GitHub Pages
     <Link href={`/listing?id=${data.id}`} className="group cursor-pointer block h-full">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-200">
+      {/* Conteneur Image avec coins très arrondis */}
+      <div className="relative aspect-[4/3] overflow-hidden rounded-[2rem] bg-gray-200 border border-black/5 dark:border-white/10 shadow-sm transition-shadow duration-300 hover:shadow-xl">
         <img
           src={image}
           alt={data.title}
-          className="h-full w-full object-cover transition group-hover:scale-105"
+          className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
         />
         
-        {/* Bouton Cœur Favoris */}
+        {/* Badge Superhôte */}
+        {data.is_superhost && (
+          <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-bold shadow-lg text-black flex items-center gap-1">
+            <span>🏆</span> Superhôte
+          </div>
+        )}
+
+        {/* Bouton Cœur Flottant */}
         <button
           onClick={toggleFavorite}
-          className="absolute top-3 right-3 p-2 rounded-full hover:bg-white/10 active:scale-90 transition z-10"
+          className="absolute top-3 right-3 p-3 rounded-full bg-black/20 backdrop-blur-md hover:bg-white/90 transition-all active:scale-90 group/heart"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
-            fill={isFavorite ? '#f43f5e' : 'rgba(0,0,0,0.5)'}
+            fill={isFavorite ? '#f43f5e' : 'transparent'}
             stroke={isFavorite ? '#f43f5e' : 'white'}
-            strokeWidth={2}
-            className={`w-7 h-7 ${isFavorite ? 'drop-shadow-none' : 'drop-shadow-md'}`}
+            strokeWidth={2.5}
+            className="w-5 h-5 transition-colors group-hover/heart:stroke-rose-500"
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
           </svg>
         </button>
-
-        {data.is_superhost && (
-          <div className="absolute top-3 left-3 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold shadow-sm text-black">
-            Superhôte
-          </div>
-        )}
       </div>
 
-      <div className="mt-3 space-y-1">
-        <div className="flex justify-between items-start">
-          <h3 className="font-bold text-gray-900 dark:text-white truncate pr-2">{location}</h3>
-          <div className="flex items-center gap-1 text-sm text-black dark:text-white">
+      {/* Infos sous la carte (Épuré) */}
+      <div className="mt-4 px-2">
+        <div className="flex justify-between items-start mb-1">
+          <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-snug truncate pr-2">{location}</h3>
+          <div className="flex items-center gap-1 text-xs font-bold bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-lg">
             <span>★</span>
             <span>{data.rating || 4.9}</span>
           </div>
         </div>
-        <p className="text-gray-500 dark:text-gray-400 text-sm truncate">{data.title}</p>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">{data.dates || 'Disponible'}</p>
-        <div className="flex items-baseline gap-1 mt-1">
-          <span className="font-bold text-gray-900 dark:text-white">${data.price_per_week}</span>
-          <span className="text-gray-500 dark:text-gray-400 text-sm">par semaine</span>
+        
+        <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+          {data.type === 'private_room' ? 'Chambre privée' : 'Logement entier'}
+        </p>
+        <p className="text-gray-400 text-sm mb-3">{data.dates || 'Dispo. flexible'}</p>
+        
+        <div className="flex items-baseline gap-1">
+          <span className="font-bold text-gray-900 dark:text-white text-lg">${data.price_per_week}</span>
+          <span className="text-gray-500 text-sm">par semaine</span>
         </div>
       </div>
     </Link>
