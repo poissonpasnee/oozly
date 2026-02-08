@@ -16,6 +16,7 @@ export default function Home() {
   const [allListings, setAllListings] = useState<any[]>([]) 
   const [filteredListings, setFilteredListings] = useState<any[]>([]) 
   const [loading, setLoading] = useState(true)
+  
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -40,7 +41,8 @@ export default function Home() {
           lat: item.lat,
           lng: item.lng,
           amenities: item.amenities || [],
-          women_only: item.women_only
+          women_only: item.women_only,
+          available_from: item.available_from // IMPORTANT : On récupère la date
         }))
         setAllListings(formatted)
         setFilteredListings(formatted)
@@ -64,15 +66,36 @@ export default function Home() {
     setIsSearchOpen(false) 
   }
 
+  // --- LOGIQUE DE FILTRAGE COMPLÈTE AVEC DATES ---
   const applyFilters = (filters: any) => {
     let result = allListings.filter(l => {
+      // 1. Prix
       if (l.price_per_week > filters.maxPrice) return false;
+      
+      // 2. Type
       if (filters.type !== 'any' && l.raw_type !== filters.type) return false; 
+      
+      // 3. Femmes uniquement
       if (filters.womenOnly && !l.women_only) return false;
+      
+      // 4. Équipements
       if (filters.amenities.length > 0) {
         const hasAll = filters.amenities.every((a: string) => l.amenities.includes(a));
         if (!hasAll) return false;
       }
+
+      // 5. Disponibilité (Date)
+      const today = new Date().toISOString().split('T')[0];
+      const listingDate = l.available_from || today; // Si pas de date, on suppose dispo
+
+      if (filters.availableNow) {
+        // "Dispo maintenant" -> La date de l'annonce doit être passée ou aujourd'hui
+        if (listingDate > today) return false;
+      } else if (filters.targetDate) {
+        // "A partir du X" -> L'annonce doit être dispo AVANT ou À cette date cible
+        if (listingDate > filters.targetDate) return false;
+      }
+
       return true;
     });
     setFilteredListings(result);
@@ -95,12 +118,12 @@ export default function Home() {
       {/* MODAL RECHERCHE */}
       {isSearchOpen && (
         <div className="fixed inset-0 bg-white dark:bg-gray-900 z-[3000] p-4 animate-in slide-in-from-bottom-10 duration-200">
-           <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 left-4 p-2 rounded-full bg-gray-100 dark:bg-gray-800">✕</button>
+           <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 left-4 p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white">✕</button>
            <div className="mt-16 max-w-lg mx-auto">
               <h2 className="text-2xl font-bold mb-6 dark:text-white">Recherche</h2>
               <input 
                 type="text" autoFocus placeholder="Ville, Quartier..."
-                className="w-full p-4 rounded-2xl bg-gray-100 dark:bg-gray-800 text-lg outline-none focus:ring-2 focus:ring-rose-500 dark:text-white"
+                className="w-full p-4 rounded-2xl bg-gray-100 dark:bg-gray-800 text-lg outline-none focus:ring-2 focus:ring-rose-500 text-gray-900 dark:text-white"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -112,9 +135,9 @@ export default function Home() {
 
       <FiltersModal isOpen={isFiltersOpen} onClose={() => setIsFiltersOpen(false)} onApply={applyFilters} />
 
+      {/* LISTE ET CARTE */}
       <div className="flex-1 max-w-[1800px] mx-auto w-full px-4 lg:px-6 pt-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_45%] gap-8">
-          
           <div className="pb-20">
             {loading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{[1,2,3,4].map(i => <div key={i} className="aspect-square bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse"></div>)}</div>
@@ -126,7 +149,6 @@ export default function Home() {
               </div>
             )}
           </div>
-
           <div className="hidden lg:block lg:sticky lg:top-24 lg:h-[calc(100vh-120px)]">
              <div className="h-full w-full lg:rounded-xl overflow-hidden shadow-inner border border-gray-200 dark:border-gray-700 relative z-0">
                  <Map listings={filteredListings} />
