@@ -6,9 +6,9 @@ import dynamic from 'next/dynamic'
 import ListingCard from '@/components/ListingCard'
 import FiltersModal from '@/components/FiltersModal'
 
-// Import dynamique de la carte pour éviter les erreurs serveur
+// Import dynamique de la carte
 const Map = dynamic(() => import('@/components/Map'), { 
-  loading: () => <div className="h-full w-full bg-gray-100 animate-pulse rounded-xl flex items-center justify-center text-gray-400">Chargement de la carte...</div>,
+  loading: () => <div className="h-full w-full bg-gray-100 dark:bg-gray-800 animate-pulse flex items-center justify-center text-gray-400">Chargement carte...</div>,
   ssr: false 
 })
 
@@ -21,7 +21,7 @@ export default function Home() {
   // États Modals et Affichage
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [showMapMobile, setShowMapMobile] = useState(false) // NOUVEAU : État pour basculer Carte/Liste
+  const [showMapMobile, setShowMapMobile] = useState(false) // Bascule Carte/Liste mobile
   
   // État Recherche
   const [searchTerm, setSearchTerm] = useState('')
@@ -164,10 +164,13 @@ export default function Home() {
             )}
           </div>
 
-          {/* VUE CARTE (Visible sur mobile si activée, toujours visible sur desktop) */}
-          <div className={`${showMapMobile ? 'block fixed inset-0 top-[130px] z-30 bg-white' : 'hidden'} lg:block lg:relative h-full`}>
-             <div className="h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-200 dark:border-gray-700 relative z-0">
-               <Map listings={filteredListings} />
+          {/* VUE CARTE (Mobile: plein écran fixe / Desktop: sticky) */}
+          <div className={`${showMapMobile ? 'fixed inset-x-0 bottom-0 top-[70px] z-30 bg-white dark:bg-gray-900' : 'hidden'} lg:block lg:sticky lg:top-24 lg:h-[calc(100vh-120px)]`}>
+             <div className="h-full w-full lg:rounded-xl overflow-hidden shadow-inner border-t lg:border border-gray-200 dark:border-gray-700 relative z-0">
+               {/* Affichage conditionnel pour forcer le redimensionnement Leaflet */}
+               {(showMapMobile || (typeof window !== 'undefined' && window.innerWidth >= 1024)) && (
+                 <Map listings={filteredListings} />
+               )}
              </div>
           </div>
         </div>
