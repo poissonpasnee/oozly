@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-// Définition explicite du type des props
+// Définition explicite des types pour éviter les erreurs TypeScript
 interface ListingCardProps {
   data: {
     id: string
@@ -33,7 +33,7 @@ export default function ListingCard({ data }: ListingCardProps) {
   }, [data.id])
 
   const toggleFavorite = (e: React.MouseEvent) => {
-    e.preventDefault()
+    e.preventDefault() // Empêche le clic sur le lien quand on clique sur le cœur
     e.stopPropagation()
 
     const favorites = JSON.parse(localStorage.getItem('favorites') || '[]')
@@ -49,12 +49,13 @@ export default function ListingCard({ data }: ListingCardProps) {
     setIsFavorite(!isFavorite)
   }
 
-  // Fallback sécurisé pour l'affichage
+  // Fallback sécurisé pour l'affichage (évite les bugs si une info manque)
   const location = data.location || data.location_name || 'Lieu inconnu'
   const image = data.image || 'https://via.placeholder.com/600x400'
 
   return (
-    <Link href={`/listings/${data.id}`} className="group cursor-pointer block h-full">
+    // IMPORTANT : On utilise le format Query String (?id=...) pour GitHub Pages
+    <Link href={`/listing?id=${data.id}`} className="group cursor-pointer block h-full">
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-200">
         <img
           src={image}
@@ -62,6 +63,7 @@ export default function ListingCard({ data }: ListingCardProps) {
           className="h-full w-full object-cover transition group-hover:scale-105"
         />
         
+        {/* Bouton Cœur Favoris */}
         <button
           onClick={toggleFavorite}
           className="absolute top-3 right-3 p-2 rounded-full hover:bg-white/10 active:scale-90 transition z-10"
