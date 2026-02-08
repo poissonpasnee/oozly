@@ -42,7 +42,8 @@ export default function Home() {
           lng: item.lng,
           amenities: item.amenities || [],
           women_only: item.women_only,
-          available_from: item.available_from // IMPORTANT : On récupère la date
+          // NOUVEAU : On récupère le tableau des plages de dates
+          availability_ranges: item.availability_ranges || [] 
         }))
         setAllListings(formatted)
         setFilteredListings(formatted)
@@ -66,7 +67,7 @@ export default function Home() {
     setIsSearchOpen(false) 
   }
 
-  // --- LOGIQUE DE FILTRAGE COMPLÈTE AVEC DATES ---
+  // --- LOGIQUE DE FILTRAGE MISE À JOUR (DATES MULTIPLES) ---
   const applyFilters = (filters: any) => {
     let result = allListings.filter(l => {
       // 1. Prix
@@ -84,16 +85,29 @@ export default function Home() {
         if (!hasAll) return false;
       }
 
-      // 5. Disponibilité (Date)
+      // 5. Disponibilité (Plages de dates multiples)
+      const ranges = l.availability_ranges;
+      
+      // Si l'hôte n'a mis aucune date spécifique, on considère (par défaut) que c'est tout le temps dispo.
+      // Si vous préférez l'inverse (indispo par défaut), changez 'return true' par 'return false'.
+      if (!ranges || ranges.length === 0) {
+         // Logique: Pas de restriction = Disponible
+         return true; 
+      }
+
       const today = new Date().toISOString().split('T')[0];
-      const listingDate = l.available_from || today; // Si pas de date, on suppose dispo
 
       if (filters.availableNow) {
-        // "Dispo maintenant" -> La date de l'annonce doit être passée ou aujourd'hui
-        if (listingDate > today) return false;
-      } else if (filters.targetDate) {
-        // "A partir du X" -> L'annonce doit être dispo AVANT ou À cette date cible
-        if (listingDate > filters.targetDate) return false;
+        // L'utilisateur veut "Maintenant"
+        // On cherche SI une des plages contient la date d'aujourd'hui
+        const isFreeToday = ranges.some((r: any) => today >= r.start && today <= r.end);
+        if (!isFreeToday) return false;
+      } 
+      else if (filters.targetDate) {
+        // L'utilisateur vise une date précise
+        // On cherche SI une des plages contient cette date cible
+        const isFreeAtDate = ranges.some((r: any) => filters.targetDate >= r.start && filters.targetDate <= r.end);
+        if (!isFreeAtDate) return false;
       }
 
       return true;
@@ -133,12 +147,22 @@ export default function Home() {
         </div>
       )}
 
+      {/* FILTRES */}
       <FiltersModal isOpen={isFiltersOpen} onClose={() => setIsFiltersOpen(false)} onApply={applyFilters} />
 
       {/* LISTE ET CARTE */}
       <div className="flex-1 max-w-[1800px] mx-auto w-full px-4 lg:px-6 pt-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_45%] gap-8">
           <div className="pb-20">
+            <div className="flex justify-between items-end mb-4 px-1">
+               <h2 className="font-semibold text-lg dark:text-white">
+                 {loading ? '...' : filteredListings.length > 0 ? `${filteredListings.length} logements` : 'Aucun résultat'}
+               </h2>
+               {(searchTerm || filteredListings.length !== allListings.length) && (
+                 <button onClick={() => { setSearchTerm(''); setFilteredListings(allListings); }} className="text-sm text-rose-500 font-medium underline">Tout effacer</button>
+               )}
+            </div>
+
             {loading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{[1,2,3,4].map(i => <div key={i} className="aspect-square bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse"></div>)}</div>
             ) : (
