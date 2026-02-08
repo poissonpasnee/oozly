@@ -10,9 +10,14 @@ export default function ProfilePage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
-  const [notifEnabled, setNotifEnabled] = useState(true) // État visuel notification
+  const [notifEnabled, setNotifEnabled] = useState(true)
+  
+  // NOUVEAU : État pour savoir si on est sur le client
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true) // On confirme qu'on est sur le navigateur
+    
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) setUser(user)
@@ -20,10 +25,12 @@ export default function ProfilePage() {
     }
     getUser()
     
-    // Check Dark Mode au chargement
-    if (localStorage.getItem('theme') === 'dark' || document.documentElement.classList.contains('dark')) {
-      setIsDarkMode(true)
-      document.documentElement.classList.add('dark')
+    // Check Dark Mode SAFE
+    if (typeof window !== 'undefined') {
+       if (localStorage.getItem('theme') === 'dark' || document.documentElement.classList.contains('dark')) {
+         setIsDarkMode(true)
+         document.documentElement.classList.add('dark')
+       }
     }
   }, [supabase, router])
 
@@ -44,9 +51,13 @@ export default function ProfilePage() {
     router.push('/login')
   }
 
+  // SI PAS MONTÉ, ON AFFICHE RIEN (Pour éviter le flash d'erreur)
+  if (!mounted) return null
+  
   if (!user) return <div className="p-6">Chargement...</div>
 
   return (
+    // ... (Le reste du JSX reste identique à ce que je vous ai donné avant)
     <div className="min-h-screen bg-white dark:bg-gray-900 pb-24 text-gray-900 dark:text-white transition-colors">
       <div className="px-6 py-8">
         
@@ -58,7 +69,6 @@ export default function ProfilePage() {
           <div>
             <h1 className="text-2xl font-bold">Mon Profil</h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">{user.email}</p>
-            {/* Lien Édition (Simulé) */}
             <Link href="/profile/edit" className="text-sm font-semibold underline text-rose-500">
               Modifier mon profil
             </Link>
