@@ -6,8 +6,9 @@ import dynamic from 'next/dynamic'
 import ListingCard from '@/components/ListingCard'
 import FiltersModal from '@/components/FiltersModal'
 
+// Import dynamique de la carte pour éviter les erreurs serveur
 const Map = dynamic(() => import('@/components/Map'), { 
-  loading: () => <div className="h-full w-full bg-gray-100 animate-pulse rounded-xl flex items-center justify-center text-gray-400">Chargement...</div>,
+  loading: () => <div className="h-full w-full bg-gray-100 animate-pulse rounded-xl flex items-center justify-center text-gray-400">Chargement de la carte...</div>,
   ssr: false 
 })
 
@@ -17,8 +18,12 @@ export default function Home() {
   const [filteredListings, setFilteredListings] = useState<any[]>([]) 
   const [loading, setLoading] = useState(true)
   
+  // États Modals et Affichage
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [showMapMobile, setShowMapMobile] = useState(false) // NOUVEAU : État pour basculer Carte/Liste
+  
+  // État Recherche
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -30,7 +35,7 @@ export default function Home() {
           title: item.title,
           location: item.location_name,
           type: item.type === 'private_room' ? 'Chambre privée' : 'Logement entier',
-          raw_type: item.type, // Important pour le filtre
+          raw_type: item.type,
           price_per_week: item.price_per_week,
           bond: item.bond_amount,
           rating: 4.9,
@@ -41,7 +46,7 @@ export default function Home() {
           lat: item.lat,
           lng: item.lng,
           amenities: item.amenities || [],
-          women_only: item.women_only // Important pour le filtre
+          women_only: item.women_only
         }))
         setAllListings(formatted)
         setFilteredListings(formatted)
@@ -65,16 +70,11 @@ export default function Home() {
     setIsSearchOpen(false) 
   }
 
-  // LOGIQUE DE FILTRAGE AVANCÉE
   const applyFilters = (filters: any) => {
     let result = allListings.filter(l => {
-      // Prix
       if (l.price_per_week > filters.maxPrice) return false;
-      // Type
       if (filters.type !== 'any' && l.raw_type !== filters.type) return false; 
-      // Femmes
       if (filters.womenOnly && !l.women_only) return false;
-      // Amenities
       if (filters.amenities.length > 0) {
         const hasAll = filters.amenities.every((a: string) => l.amenities.includes(a));
         if (!hasAll) return false;
@@ -85,9 +85,9 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-white dark:bg-gray-900 pb-20 transition-colors">
+    <main className="min-h-screen bg-white dark:bg-gray-900 pb-20 transition-colors relative">
       
-      {/* Header Mobile Fixe */}
+      {/* --- HEADER MOBILE --- */}
       <div className="sticky top-0 bg-white dark:bg-gray-900 z-40 px-4 py-3 shadow-sm flex gap-3 items-center lg:hidden">
          <div 
            onClick={() => setIsSearchOpen(true)}
@@ -99,7 +99,7 @@ export default function Home() {
                   {searchTerm ? searchTerm : "Où aller ?"}
                 </span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {filteredListings.length} annonces trouvées
+                  {filteredListings.length} annonces • {showMapMobile ? 'Carte' : 'Liste'}
                 </span>
              </div>
          </div>
@@ -113,22 +113,15 @@ export default function Home() {
          </button>
       </div>
 
-      {/* MODAL RECHERCHE */}
+      {/* --- MODAL RECHERCHE --- */}
       {isSearchOpen && (
         <div className="fixed inset-0 bg-white dark:bg-gray-900 z-[3000] p-4 animate-in slide-in-from-bottom-10 duration-200">
-           <button 
-             onClick={() => setIsSearchOpen(false)}
-             className="absolute top-4 left-4 p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-           >
-             ✕
-           </button>
+           <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 left-4 p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white">✕</button>
            <div className="mt-16 max-w-lg mx-auto">
               <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Recherche</h2>
               <div className="relative">
                 <input 
-                  type="text" 
-                  autoFocus
-                  placeholder="Ville, Quartier..."
+                  type="text" autoFocus placeholder="Ville, Quartier..."
                   className="w-full p-4 pl-12 rounded-2xl bg-gray-100 dark:bg-gray-800 text-lg outline-none focus:ring-2 focus:ring-rose-500 text-gray-900 dark:text-white"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -136,35 +129,25 @@ export default function Home() {
                 />
                 <svg className="w-6 h-6 text-gray-400 absolute left-4 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>
-              <button 
-                onClick={handleSearch}
-                className="w-full mt-8 bg-rose-500 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg active:scale-95 transition"
-              >
-                Rechercher
-              </button>
+              <button onClick={handleSearch} className="w-full mt-8 bg-rose-500 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg active:scale-95 transition">Rechercher</button>
            </div>
         </div>
       )}
 
-      {/* MODAL FILTRES CONNECTÉ */}
-      <FiltersModal 
-        isOpen={isFiltersOpen} 
-        onClose={() => setIsFiltersOpen(false)} 
-        onApply={applyFilters} 
-      />
+      <FiltersModal isOpen={isFiltersOpen} onClose={() => setIsFiltersOpen(false)} onApply={applyFilters} />
 
-      {/* Liste et Carte */}
+      {/* --- CONTENU PRINCIPAL --- */}
       <div className="flex-1 max-w-[1800px] mx-auto w-full px-4 lg:px-6 pt-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_45%] gap-8">
-          <div className="pb-20">
+          
+          {/* VUE LISTE (Cachée sur mobile si Carte activée) */}
+          <div className={`${showMapMobile ? 'hidden' : 'block'} lg:block pb-20`}>
             <div className="flex justify-between items-end mb-4 px-1">
                <h2 className="font-semibold text-lg dark:text-white">
                  {loading ? '...' : filteredListings.length > 0 ? `${filteredListings.length} logements` : 'Aucun résultat'}
                </h2>
                {(searchTerm || filteredListings.length !== allListings.length) && (
-                 <button onClick={() => { setSearchTerm(''); setFilteredListings(allListings); }} className="text-sm text-rose-500 font-medium underline">
-                   Tout effacer
-                 </button>
+                 <button onClick={() => { setSearchTerm(''); setFilteredListings(allListings); }} className="text-sm text-rose-500 font-medium underline">Tout effacer</button>
                )}
             </div>
 
@@ -180,11 +163,36 @@ export default function Home() {
               </div>
             )}
           </div>
-          <div className="hidden lg:block h-full relative">
-             <Map listings={filteredListings} />
+
+          {/* VUE CARTE (Visible sur mobile si activée, toujours visible sur desktop) */}
+          <div className={`${showMapMobile ? 'block fixed inset-0 top-[130px] z-30 bg-white' : 'hidden'} lg:block lg:relative h-full`}>
+             <div className="h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-200 dark:border-gray-700 relative z-0">
+               <Map listings={filteredListings} />
+             </div>
           </div>
         </div>
       </div>
+
+      {/* --- BOUTON FLOTTANT CARTE / LISTE (Mobile uniquement) --- */}
+      <div className="lg:hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[40]">
+        <button 
+          onClick={() => setShowMapMobile(!showMapMobile)}
+          className="flex items-center gap-2 bg-gray-900 text-white px-6 py-3.5 rounded-full font-bold shadow-xl active:scale-95 transition hover:scale-105"
+        >
+          {showMapMobile ? (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+              <span>Liste</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+              <span>Carte</span>
+            </>
+          )}
+        </button>
+      </div>
+
     </main>
   )
 }
