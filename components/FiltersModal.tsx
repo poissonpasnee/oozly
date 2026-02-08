@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const AMENITIES_OPTIONS = [
   'Wifi', 'Climatisation', 'TV', 'Cuisine équipée', 
@@ -18,6 +18,16 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
   const [womenOnly, setWomenOnly] = useState(false)
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
   const [type, setType] = useState('any')
+  
+  // NOUVEAU: Empêcher le scroll du body quand le modal est ouvert
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+    return () => { document.body.style.overflow = 'unset' }
+  }, [isOpen])
 
   const toggleAmenity = (amenity: string) => {
     if (selectedAmenities.includes(amenity)) {
@@ -41,26 +51,41 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center pointer-events-none">
-      <div className="absolute inset-0 bg-black/50 pointer-events-auto" onClick={onClose} />
-      <div className="bg-white dark:bg-gray-900 w-full sm:w-[500px] sm:rounded-2xl rounded-t-2xl p-6 pointer-events-auto max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-10">
+    <div className="fixed inset-0 z-[3000] flex items-end sm:items-center justify-center">
+      {/* Overlay cliquable pour fermer */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
+        onClick={onClose}
+      />
+      
+      {/* Contenu du Modal */}
+      <div className="relative bg-white dark:bg-gray-900 w-full sm:w-[500px] sm:rounded-2xl rounded-t-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-300 max-h-[90vh] overflow-y-auto flex flex-col">
         
-        <div className="flex justify-between items-center mb-6">
+        {/* Header avec bouton fermer */}
+        <div className="flex justify-between items-center mb-6 sticky top-0 bg-white dark:bg-gray-900 z-10 py-2 border-b border-gray-100 dark:border-gray-800">
           <h2 className="text-xl font-bold dark:text-white">Filtres</h2>
-          <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full dark:text-white">✕</button>
+          <button 
+            onClick={onClose} 
+            className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="space-y-6 pb-20">
-          {/* Type */}
+        <div className="space-y-8 pb-24">
+          
+          {/* Section Type */}
           <div>
-            <h3 className="font-bold mb-3 dark:text-white">Type de logement</h3>
+            <h3 className="font-bold mb-3 dark:text-white text-sm uppercase text-gray-500">Type de logement</h3>
             <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
               {['any', 'private_room', 'entire_home'].map((t) => (
                 <button
                   key={t}
                   onClick={() => setType(t)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition ${
-                    type === t ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                  className={`flex-1 py-3 rounded-lg text-sm font-bold capitalize transition-all ${
+                    type === t 
+                      ? 'bg-white dark:bg-gray-600 shadow-md text-black dark:text-white transform scale-[1.02]' 
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
                   }`}
                 >
                   {t === 'any' ? 'Tout' : t === 'private_room' ? 'Chambre' : 'Logement'}
@@ -69,58 +94,22 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
             </div>
           </div>
 
-          {/* Prix */}
+          {/* Section Prix */}
           <div>
-            <h3 className="font-bold mb-3 dark:text-white">Prix max: ${priceRange[1]}/semaine</h3>
+            <div className="flex justify-between mb-4">
+               <h3 className="font-bold dark:text-white text-sm uppercase text-gray-500">Prix max</h3>
+               <span className="font-bold text-rose-500 text-lg">${priceRange[1]} <span className="text-xs text-gray-400">/semaine</span></span>
+            </div>
             <input 
               type="range" min="0" max="2000" step="50"
               value={priceRange[1]}
               onChange={(e) => setPriceRange([0, parseInt(e.target.value)])}
               className="w-full accent-rose-500 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
-          </div>
-
-          {/* Femmes Uniquement */}
-          <div className="flex items-center justify-between py-2 border-y border-gray-100 dark:border-gray-800">
-             <span className="font-bold dark:text-white">Femmes uniquement</span>
-             <input 
-               type="checkbox" 
-               checked={womenOnly}
-               onChange={(e) => setWomenOnly(e.target.checked)}
-               className="w-6 h-6 accent-rose-500" 
-             />
-          </div>
-
-          {/* Équipements */}
-          <div>
-            <h3 className="font-bold mb-3 dark:text-white">Équipements</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {AMENITIES_OPTIONS.map(amenity => (
-                <div 
-                  key={amenity}
-                  onClick={() => toggleAmenity(amenity)}
-                  className={`p-2 rounded-lg border text-sm cursor-pointer transition ${
-                    selectedAmenities.includes(amenity) 
-                      ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-600' 
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  {amenity}
-                </div>
-              ))}
+            <div className="flex justify-between text-xs text-gray-400 mt-2">
+              <span>$0</span>
+              <span>$2000+</span>
             </div>
           </div>
-        </div>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
-          <button 
-            onClick={handleApply}
-            className="w-full bg-rose-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition"
-          >
-            Afficher les résultats
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+         
