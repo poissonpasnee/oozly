@@ -155,4 +155,100 @@ export default function PublishPage() {
               autoComplete="off"
             />
             {suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-20 
+              <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-20 mt-1 max-h-48 overflow-y-auto">
+                 {suggestions.map(s => (
+                   <div 
+                     key={s} 
+                     className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                     onClick={() => { setFormData({...formData, location: s}); setSuggestions([]); }}
+                   >
+                     📍 {s}
+                   </div>
+                 ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Loyer/semaine</label>
+              <input 
+                type="number" name="price" required placeholder="$"
+                className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent"
+                onChange={handleChange}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Caution</label>
+              <input 
+                type="number" name="bond" required placeholder="$"
+                className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent"
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Description</label>
+            <textarea 
+              name="description" required rows={4}
+              placeholder="Dites-en plus sur la colocation..."
+              className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent"
+              onChange={handleChange}
+            />
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold mb-4">Préférences</h2>
+          <div className="space-y-4">
+             <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-xl">
+               <div>
+                 <div className="font-bold">Couples acceptés</div>
+                 <div className="text-xs text-gray-500">Autoriser deux personnes</div>
+               </div>
+               <input type="checkbox" name="couples" className="w-6 h-6 accent-rose-500" onChange={handleChange} />
+             </div>
+             
+             <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-xl">
+               <div>
+                 <div className="font-bold">Femmes uniquement</div>
+                 <div className="text-xs text-gray-500">Réservé aux locataires femmes</div>
+               </div>
+               <input type="checkbox" name="women_only" className="w-6 h-6 accent-rose-500" onChange={handleChange} />
+             </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold mb-4">Équipements</h2>
+          <div className="grid grid-cols-2 gap-3">
+             {AMENITIES_OPTIONS.map(amenity => (
+               <div 
+                 key={amenity}
+                 onClick={() => toggleAmenity(amenity)}
+                 className={`p-3 rounded-lg border cursor-pointer text-sm font-medium transition ${
+                   selectedAmenities.includes(amenity) 
+                     ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-600' 
+                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
+                 }`}
+               >
+                 {selectedAmenities.includes(amenity) ? '✓ ' : ''}{amenity}
+               </div>
+             ))}
+          </div>
+        </section>
+
+        <div className="pt-4">
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-rose-500 text-white font-bold py-4 rounded-xl text-lg hover:bg-rose-600 transition disabled:opacity-50 shadow-lg"
+          >
+            {loading ? 'Publication en cours...' : 'Publier mon annonce'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
