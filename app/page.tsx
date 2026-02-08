@@ -13,15 +13,12 @@ const Map = dynamic(() => import('@/components/Map'), {
 
 export default function Home() {
   const supabase = createClientComponentClient()
-  const [allListings, setAllListings] = useState<any[]>([]) // Toutes les annonces
-  const [filteredListings, setFilteredListings] = useState<any[]>([]) // Annonces affichées
+  const [allListings, setAllListings] = useState<any[]>([]) 
+  const [filteredListings, setFilteredListings] = useState<any[]>([]) 
   const [loading, setLoading] = useState(true)
   
-  // États Modals
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
-  
-  // État Recherche
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -33,6 +30,7 @@ export default function Home() {
           title: item.title,
           location: item.location_name,
           type: item.type === 'private_room' ? 'Chambre privée' : 'Logement entier',
+          raw_type: item.type, // Important pour le filtre
           price_per_week: item.price_per_week,
           bond: item.bond_amount,
           rating: 4.9,
@@ -40,10 +38,10 @@ export default function Home() {
           image: item.images?.[0] || '',
           dates: 'Disponible',
           is_superhost: false,
-          // Champs cachés pour le filtre
           lat: item.lat,
           lng: item.lng,
-          amenities: item.amenities || []
+          amenities: item.amenities || [],
+          women_only: item.women_only // Important pour le filtre
         }))
         setAllListings(formatted)
         setFilteredListings(formatted)
@@ -53,7 +51,6 @@ export default function Home() {
     fetchListings()
   }, [supabase])
 
-  // Fonction de filtrage
   const handleSearch = () => {
     if (!searchTerm.trim()) {
       setFilteredListings(allListings)
@@ -65,7 +62,26 @@ export default function Home() {
       )
       setFilteredListings(filtered)
     }
-    setIsSearchOpen(false) // Fermer le modal après recherche
+    setIsSearchOpen(false) 
+  }
+
+  // LOGIQUE DE FILTRAGE AVANCÉE
+  const applyFilters = (filters: any) => {
+    let result = allListings.filter(l => {
+      // Prix
+      if (l.price_per_week > filters.maxPrice) return false;
+      // Type
+      if (filters.type !== 'any' && l.raw_type !== filters.type) return false; 
+      // Femmes
+      if (filters.womenOnly && !l.women_only) return false;
+      // Amenities
+      if (filters.amenities.length > 0) {
+        const hasAll = filters.amenities.every((a: string) => l.amenities.includes(a));
+        if (!hasAll) return false;
+      }
+      return true;
+    });
+    setFilteredListings(result);
   }
 
   return (
@@ -97,7 +113,7 @@ export default function Home() {
          </button>
       </div>
 
-      {/* MODAL RECHERCHE MOBILE (Amélioré) */}
+      {/* MODAL RECHERCHE */}
       {isSearchOpen && (
         <div className="fixed inset-0 bg-white dark:bg-gray-900 z-[3000] p-4 animate-in slide-in-from-bottom-10 duration-200">
            <button 
@@ -108,7 +124,6 @@ export default function Home() {
            </button>
            <div className="mt-16 max-w-lg mx-auto">
               <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Recherche</h2>
-              
               <div className="relative">
                 <input 
                   type="text" 
@@ -121,23 +136,6 @@ export default function Home() {
                 />
                 <svg className="w-6 h-6 text-gray-400 absolute left-4 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>
-
-              <div className="mt-6">
-                <h3 className="text-xs font-bold text-gray-500 uppercase mb-3">Suggestions</h3>
-                {['Sydney', 'Melbourne', 'Bondi Beach', 'Surry Hills'].map(city => (
-                   <div 
-                     key={city}
-                     onClick={() => { setSearchTerm(city); setTimeout(handleSearch, 100); }}
-                     className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl cursor-pointer"
-                   >
-                      <div className="bg-gray-200 dark:bg-gray-700 p-2 rounded-lg">
-                        <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                      </div>
-                      <span className="text-lg text-gray-800 dark:text-gray-200">{city}</span>
-                   </div>
-                ))}
-              </div>
-
               <button 
                 onClick={handleSearch}
                 className="w-full mt-8 bg-rose-500 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg active:scale-95 transition"
@@ -148,18 +146,22 @@ export default function Home() {
         </div>
       )}
 
-      <FiltersModal isOpen={isFiltersOpen} onClose={() => setIsFiltersOpen(false)} />
+      {/* MODAL FILTRES CONNECTÉ */}
+      <FiltersModal 
+        isOpen={isFiltersOpen} 
+        onClose={() => setIsFiltersOpen(false)} 
+        onApply={applyFilters} 
+      />
 
-      {/* Contenu Liste */}
+      {/* Liste et Carte */}
       <div className="flex-1 max-w-[1800px] mx-auto w-full px-4 lg:px-6 pt-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_45%] gap-8">
           <div className="pb-20">
-            {/* Header Resultats */}
             <div className="flex justify-between items-end mb-4 px-1">
                <h2 className="font-semibold text-lg dark:text-white">
                  {loading ? '...' : filteredListings.length > 0 ? `${filteredListings.length} logements` : 'Aucun résultat'}
                </h2>
-               {searchTerm && (
+               {(searchTerm || filteredListings.length !== allListings.length) && (
                  <button onClick={() => { setSearchTerm(''); setFilteredListings(allListings); }} className="text-sm text-rose-500 font-medium underline">
                    Tout effacer
                  </button>
