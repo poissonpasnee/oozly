@@ -1,4 +1,4 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient
+import { createClientComponentClient } from '@supabase/auth
