@@ -29,7 +29,7 @@ export default function PublishPage() {
     bond: '',
     type: 'private_room',
     couples: false,
-    women_only: false // NOUVEAU
+    women_only: false
   })
   
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
@@ -42,7 +42,7 @@ export default function PublishPage() {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     setFormData({ ...formData, [e.target.name]: value })
     
-    // Autocomplétion Adresse (Simulation Google Maps)
+    // Autocomplétion Adresse
     if (e.target.name === 'location') {
        if (value.length > 1) {
          setSuggestions(CITIES.filter(c => c.toLowerCase().includes(value.toLowerCase())))
@@ -52,7 +52,6 @@ export default function PublishPage() {
     }
   }
 
-  // Gestion des équipements (Toggle)
   const toggleAmenity = (amenity: string) => {
     if (selectedAmenities.includes(amenity)) {
       setSelectedAmenities(selectedAmenities.filter(a => a !== amenity))
@@ -61,7 +60,6 @@ export default function PublishPage() {
     }
   }
 
-  // Gestion Upload Image (Pellicule -> Base64)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -77,10 +75,10 @@ export default function PublishPage() {
     e.preventDefault()
     setLoading(true)
     
+    // CORRECTION ICI : Une seule accolade !
     const {  { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // Insertion
     const { error } = await supabase.from('listings').insert({
       title: formData.title,
       description: formData.description,
@@ -89,9 +87,9 @@ export default function PublishPage() {
       bond_amount: parseInt(formData.bond),
       type: formData.type,
       couples_accepted: formData.couples,
-      women_only: formData.women_only, // NOUVEAU
-      amenities: selectedAmenities, // NOUVEAU
-      images: imagePreview ? [imagePreview] : [], // Sauvegarde l'image encodée (Lourd mais marche sans storage)
+      women_only: formData.women_only,
+      amenities: selectedAmenities,
+      images: imagePreview ? [imagePreview] : [],
       host_id: user.id,
       lat: -33.8688, 
       lng: 151.2093
@@ -108,7 +106,6 @@ export default function PublishPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pb-24 text-gray-900 dark:text-white transition-colors">
-      
       {/* Header */}
       <div className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900 z-50">
         <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 font-bold">✕</Link>
@@ -163,7 +160,6 @@ export default function PublishPage() {
               onChange={handleChange}
               autoComplete="off"
             />
-            {/* Suggestions Autocomplete */}
             {suggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-20 mt-1 max-h-48 overflow-y-auto">
                  {suggestions.map(s => (
@@ -213,7 +209,6 @@ export default function PublishPage() {
         <section>
           <h2 className="text-xl font-bold mb-4">Préférences</h2>
           <div className="space-y-4">
-             {/* Switch Couples */}
              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-xl">
                <div>
                  <div className="font-bold">Couples acceptés</div>
@@ -222,7 +217,6 @@ export default function PublishPage() {
                <input type="checkbox" name="couples" className="w-6 h-6 accent-rose-500" onChange={handleChange} />
              </div>
              
-             {/* Switch Femmes uniquement */}
              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-xl">
                <div>
                  <div className="font-bold">Femmes uniquement</div>
@@ -253,7 +247,6 @@ export default function PublishPage() {
           </div>
         </section>
 
-        {/* Submit */}
         <div className="pt-4">
           <button 
             type="submit" 
@@ -263,7 +256,6 @@ export default function PublishPage() {
             {loading ? 'Publication en cours...' : 'Publier mon annonce'}
           </button>
         </div>
-
       </form>
     </div>
   )
