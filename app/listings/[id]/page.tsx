@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation' // NOUVEAU: useParams
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 
@@ -11,7 +11,11 @@ const Map = dynamic(() => import('@/components/Map'), {
   ssr: false 
 })
 
-export default function ListingPage({ params }: { params: { id: string } }) {
+// On supprime { params } des props ici
+export default function ListingPage() {
+  const params = useParams() // On récupère l'ID côté client
+  const id = params?.id as string // Sécurisation du type
+
   const supabase = createClientComponentClient()
   const router = useRouter()
   const [listing, setListing] = useState<any>(null)
@@ -19,11 +23,13 @@ export default function ListingPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!id) return // Attendre que l'ID soit dispo
+
     const fetchListing = async () => {
       const { data: listingData, error } = await supabase
         .from('listings')
         .select('*')
-        .eq('id', params.id)
+        .eq('id', id)
         .single()
 
       if (error || !listingData) {
@@ -39,16 +45,17 @@ export default function ListingPage({ params }: { params: { id: string } }) {
       setLoading(false)
     }
     fetchListing()
-  }, [params.id, supabase])
+  }, [id, supabase]) // Dépendance sur 'id'
 
-  if (loading) return <div className="p-10 text-center">Chargement...</div>
-  if (!listing) return <div className="p-10 text-center">Annonce introuvable.</div>
+  if (loading) return <div className="min-h-screen bg-white dark:bg-gray-900 animate-pulse p-4"><div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4"/><div className="h-8 w-2/3 bg-gray-200 dark:bg-gray-800 rounded mb-4"/></div>
+  
+  if (!listing) return <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center dark:text-white"><h1 className="text-2xl font-bold mb-2">Introuvable</h1><Link href="/" className="text-rose-500 underline">Retour</Link></div>
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pb-24 text-gray-900 dark:text-white">
       {/* Header Mobile Navigation */}
       <div className="fixed top-0 w-full z-10 flex justify-between p-4 pointer-events-none lg:hidden">
-        <button onClick={() => router.back()} className="bg-white/90 dark:bg-gray-800/90 p-2 rounded-full shadow-sm pointer-events-auto backdrop-blur-sm">←</button>
+        <button onClick={() => router.back()} className="bg-white/90 dark:bg-gray-800/90 p-2 rounded-full shadow-sm pointer-events-auto backdrop-blur-sm dark:text-white">←</button>
       </div>
 
       {/* Image */}
@@ -60,7 +67,7 @@ export default function ListingPage({ params }: { params: { id: string } }) {
         <h1 className="text-2xl font-bold mb-2">{listing.title}</h1>
         <div className="flex justify-between items-start mb-6">
            <div>
-             <p className="text-gray-500">{listing.location_name}</p>
+             <p className="text-gray-500 dark:text-gray-400">{listing.location_name}</p>
              <div className="flex gap-2 text-xs mt-1">
                {listing.type === 'private_room' ? <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">Chambre privée</span> : <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">Logement entier</span>}
              </div>
@@ -71,7 +78,7 @@ export default function ListingPage({ params }: { params: { id: string } }) {
            </div>
         </div>
 
-        {/* --- NOUVEAU : AFFICHAGE DES DISPONIBILITÉS --- */}
+        {/* Disponibilités */}
         <div className="py-6 border-y border-gray-100 dark:border-gray-800">
            <h2 className="font-bold text-lg mb-3">Disponibilités</h2>
            {listing.availability_ranges && listing.availability_ranges.length > 0 ? (
@@ -83,14 +90,14 @@ export default function ListingPage({ params }: { params: { id: string } }) {
                ))}
              </div>
            ) : (
-             <div className="text-gray-500 text-sm italic">Aucune date spécifique indiquée (Contactez l'hôte)</div>
+             <div className="text-gray-500 text-sm italic">Contactez l'hôte pour les dates.</div>
            )}
         </div>
 
         {/* Hôte */}
         <div className="flex items-center gap-4 py-6 border-b border-gray-100 dark:border-gray-800">
            <div className="w-12 h-12 bg-gray-200 rounded-full overflow-hidden">
-             {host?.avatar_url ? <img src={host.avatar_url} className="w-full h-full object-cover" /> : null}
+             {host?.avatar_url ? <img src={host.avatar_url} className="w-full h-full object-cover" /> : <span className="flex items-center justify-center h-full font-bold text-gray-500">?</span>}
            </div>
            <div>
              <div className="font-bold">Hôte : {host?.full_name || 'Anonyme'}</div>
@@ -99,7 +106,7 @@ export default function ListingPage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Description */}
-        <div className="py-6 whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+        <div className="py-6 whitespace-pre-wrap text-gray-700 dark:text-gray-300 leading-relaxed">
           {listing.description}
         </div>
 
@@ -112,8 +119,13 @@ export default function ListingPage({ params }: { params: { id: string } }) {
       {/* Barre Contact Bas */}
       <div className="fixed bottom-0 left-0 w-full bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 p-4 pb-8 flex justify-between items-center z-20">
          <div className="font-bold text-lg">${listing.price_per_week} <span className="text-sm font-normal text-gray-500">/ sem</span></div>
-         <button className="bg-rose-500 text-white font-bold py-3 px-8 rounded-xl">Contacter</button>
+         <button className="bg-rose-500 text-white font-bold py-3 px-8 rounded-xl hover:bg-rose-600 transition">Contacter</button>
       </div>
     </div>
   )
+}
+
+// C'est ICI le secret pour que le build passe : on génère une liste vide !
+export async function generateStaticParams() {
+  return []
 }
