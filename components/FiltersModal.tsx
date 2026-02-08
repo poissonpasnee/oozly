@@ -10,7 +10,7 @@ const AMENITIES_OPTIONS = [
 interface FiltersModalProps {
   isOpen: boolean
   onClose: () => void
-  onApply: (filters: any) => void // Callback vers la page d'accueil
+  onApply: (filters: any) => void
 }
 
 export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalProps) {
@@ -46,21 +46,21 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
       <div className="bg-white dark:bg-gray-900 w-full sm:w-[500px] sm:rounded-2xl rounded-t-2xl p-6 pointer-events-auto max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-10">
         
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Filtres</h2>
-          <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full">✕</button>
+          <h2 className="text-xl font-bold dark:text-white">Filtres</h2>
+          <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full dark:text-white">✕</button>
         </div>
 
         <div className="space-y-6 pb-20">
           {/* Type */}
           <div>
-            <h3 className="font-bold mb-3">Type de logement</h3>
+            <h3 className="font-bold mb-3 dark:text-white">Type de logement</h3>
             <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
               {['any', 'private_room', 'entire_home'].map((t) => (
                 <button
                   key={t}
                   onClick={() => setType(t)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize ${
-                    type === t ? 'bg-white dark:bg-gray-700 shadow-sm' : 'text-gray-500'
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition ${
+                    type === t ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
                   }`}
                 >
                   {t === 'any' ? 'Tout' : t === 'private_room' ? 'Chambre' : 'Logement'}
@@ -71,18 +71,18 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
 
           {/* Prix */}
           <div>
-            <h3 className="font-bold mb-3">Prix max: ${priceRange[1]}/semaine</h3>
+            <h3 className="font-bold mb-3 dark:text-white">Prix max: ${priceRange[1]}/semaine</h3>
             <input 
               type="range" min="0" max="2000" step="50"
               value={priceRange[1]}
               onChange={(e) => setPriceRange([0, parseInt(e.target.value)])}
-              className="w-full accent-rose-500 h-2 bg-gray-200 rounded-lg appearance-none"
+              className="w-full accent-rose-500 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
           </div>
 
           {/* Femmes Uniquement */}
           <div className="flex items-center justify-between py-2 border-y border-gray-100 dark:border-gray-800">
-             <span className="font-bold">Femmes uniquement</span>
+             <span className="font-bold dark:text-white">Femmes uniquement</span>
              <input 
                type="checkbox" 
                checked={womenOnly}
@@ -93,16 +93,16 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
 
           {/* Équipements */}
           <div>
-            <h3 className="font-bold mb-3">Équipements</h3>
+            <h3 className="font-bold mb-3 dark:text-white">Équipements</h3>
             <div className="grid grid-cols-2 gap-3">
               {AMENITIES_OPTIONS.map(amenity => (
                 <div 
                   key={amenity}
                   onClick={() => toggleAmenity(amenity)}
-                  className={`p-2 rounded-lg border text-sm cursor-pointer ${
+                  className={`p-2 rounded-lg border text-sm cursor-pointer transition ${
                     selectedAmenities.includes(amenity) 
                       ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-600' 
-                      : 'border-gray-200 dark:border-gray-700'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
                   }`}
                 >
                   {amenity}
@@ -115,7 +115,7 @@ export default function FiltersModal({ isOpen, onClose, onApply }: FiltersModalP
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
           <button 
             onClick={handleApply}
-            className="w-full bg-rose-500 text-white font-bold py-3 rounded-xl"
+            className="w-full bg-rose-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition"
           >
             Afficher les résultats
           </button>
