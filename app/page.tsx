@@ -52,11 +52,12 @@ export default function Home() {
       // 1) Format (on ajoute host_id + created_at)
       const formatted = data.map((item: any) => ({
         id: item.id,
-        host_id: item.host_id, // 👈 nécessaire pour VIP
-        created_at: item.created_at, // 👈 nécessaire pour tri date
+        host_id: item.host_id, // nécessaire pour VIP
+        created_at: item.created_at, // nécessaire pour tri date
         title: item.title,
         location: item.location_name,
-        type: item.type === 'private_room' ? 'Chambre privée' : 'Logement entier',
+        location_name: item.location_name,
+        type: item.type,
         raw_type: item.type,
         price_per_week: item.price_per_week,
         bond: item.bond_amount,
@@ -73,7 +74,10 @@ export default function Home() {
       }))
 
       // 2) Récupérer les VIP des hosts via profiles_public
-      const hostIds = [...new Set(formatted.map((l) => l.host_id).filter(Boolean))]
+      // ✅ FIX GitHub build: pas de spread sur Set
+      const hostIds = Array.from(
+        new Set(formatted.map((l) => l.host_id).filter(Boolean))
+      ) as string[]
 
       let vipMap = new Map<string, boolean>()
       if (hostIds.length > 0) {
@@ -109,6 +113,8 @@ export default function Home() {
       const enriched = sorted.map((l: any) => ({
         ...l,
         isVip: vipMap.get(l.host_id) || false,
+        // libellé type (comme ton code initial)
+        typeLabel: l.type === 'private_room' ? 'Chambre privée' : 'Logement entier',
       }))
 
       setAllListings(enriched)
@@ -125,7 +131,9 @@ export default function Home() {
     } else {
       const lowerTerm = searchTerm.toLowerCase()
       const filtered = allListings.filter(
-        (l) => l.location?.toLowerCase().includes(lowerTerm) || l.title?.toLowerCase().includes(lowerTerm)
+        (l) =>
+          (l.location || '').toLowerCase().includes(lowerTerm) ||
+          (l.title || '').toLowerCase().includes(lowerTerm)
       )
       setFilteredListings(filtered)
     }
