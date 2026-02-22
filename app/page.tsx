@@ -6,8 +6,7 @@ import dynamic from 'next/dynamic'
 import ListingCard from '@/components/ListingCard'
 import FiltersModal from '@/components/FiltersModal'
 
-const Map = dynamic(() => import('@/components/Map'), {
-  loading: () => (
+const MapView = dynamic(() => import('@/components/Map'), {  loading: () => (
     <div className="h-full w-full bg-gray-100 dark:bg-gray-800 animate-pulse flex items-center justify-center text-gray-400">
       Chargement...
     </div>
@@ -282,8 +281,7 @@ export default function Home() {
 
           <div className="hidden lg:block lg:sticky lg:top-24 lg:h-[calc(100vh-120px)]">
             <div className="h-full w-full lg:rounded-xl overflow-hidden shadow-inner border border-gray-200 dark:border-gray-700 relative z-0">
-              <Map listings={filteredListings} />
-            </div>
+<MapView listings={filteredListings} />            </div>
           </div>
         </div>
       </div>
