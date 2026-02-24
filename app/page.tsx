@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import dynamic from 'next/dynamic'
-import Link from 'next/link'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import dynamic from 'next/dynamic'
 import ListingCard from '@/components/ListingCard'
 import FiltersModal from '@/components/FiltersModal'
 
@@ -16,104 +15,46 @@ const MapView = dynamic(() => import('@/components/Map'), {
   ssr: false,
 })
 
-type ListingRow = {
-  id: string
-  host_id?: string | null
-  title?: string | null
-  location_name?: string | null
-  price_per_week?: number | null
-  bond_amount?: number | null
-  type?: string | null
-  images?: string[] | null
-  lat?: number | null
-  lng?: number | null
-  amenities?: string[] | null
-  women_only?: boolean | null
-  availability_ranges?: { start: string; end: string }[] | null
-  created_at?: string | null
-}
+type AvailabilityRange = { start: string; end: string }
 
-type UiListing = {
+type ListingUI = {
   id: string
-  host_id?: string | null
-  created_at?: string | null
-  title: string
+  host_id: string | null
+  created_at: string | null
+  title: string | null
   location: string
   location_name: string
-  type: string
-  raw_type: string
-  price_per_week: number
-  bond: number
+  raw_type: string | null
+  type: string | null
+  price_per_week: number | null
+  bond: number | null
   rating: number
   reviews_count: number
   image: string
   dates: string
   is_superhost: boolean
-  lat?: number | null
-  lng?: number | null
+  lat: number | null
+  lng: number | null
   amenities: string[]
-  women_only?: boolean | null
-  availability_ranges: { start: string; end: string }[]
+  women_only: boolean | null
+  availability_ranges: AvailabilityRange[]
   isVip: boolean
-}
-
-function MessagesModal({
-  onClose,
-}: {
-  onClose: () => void
-}) {
-  return (
-    <div className="fixed inset-0 z-[4000] bg-white dark:bg-gray-900 lg:hidden">
-      <div className="sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between">
-        <div className="font-bold text-lg dark:text-white">Messages</div>
-        <button
-          onClick={onClose}
-          className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-          aria-label="Fermer"
-        >
-          ✕
-        </button>
-      </div>
-
-      <div className="p-4">
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
-          <div className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-            La messagerie (conversations + messages + realtime) arrive ici.
-            <br />
-            Pour l’instant, on garde l’UI intégrée proprement sans casser le build.
-          </div>
-
-          <div className="mt-4 flex gap-3">
-            <Link
-              href="/admin"
-              className="text-sm font-semibold px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              Admin
-            </Link>
-            <button
-              onClick={onClose}
-              className="text-sm font-semibold px-4 py-2 rounded-xl bg-rose-500 text-white"
-            >
-              OK
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+  typeLabel: string
 }
 
 export default function Home() {
   const supabase = createClientComponentClient()
 
-  const [allListings, setAllListings] = useState<UiListing[]>([])
-  const [filteredListings, setFilteredListings] = useState<UiListing[]>([])
+  const [allListings, setAllListings] = useState<ListingUI[]>([])
+  const [filteredListings, setFilteredListings] = useState<ListingUI[]>([])
   const [loading, setLoading] = useState(true)
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [isMessagesOpen, setIsMessagesOpen] = useState(false)
+
+  // Helpers
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   useEffect(() => {
     const fetchListings = async () => {
@@ -124,7 +65,7 @@ export default function Home() {
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) {
+      if (error || !data) {
         console.warn('listings error:', error)
         setAllListings([])
         setFilteredListings([])
@@ -132,33 +73,37 @@ export default function Home() {
         return
       }
 
-      const rows = (data || []) as ListingRow[]
+      // 1) Format de base (proche de ton code original)
+      const formatted: ListingUI[] = data.map((item: any) => {
+        const rawType = item.type ?? null
+        return {
+          id: item.id,
+          host_id: item.host_id ?? null,
+          created_at: item.created_at ?? null,
+          title: item.title ?? null,
+          location: item.location_name || 'Lieu inconnu',
+          location_name: item.location_name || 'Lieu inconnu',
+          raw_type: rawType,
+          type: rawType,
+          price_per_week: item.price_per_week ?? null,
+          bond: item.bond_amount ?? null,
+          rating: 4.9,
+          reviews_count: 0,
+          image: item.images?.[0] || '',
+          dates: 'Disponible',
+          is_superhost: false,
+          lat: item.lat ?? null,
+          lng: item.lng ?? null,
+          amenities: Array.isArray(item.amenities) ? item.amenities : [],
+          women_only: item.women_only ?? null,
+          availability_ranges: Array.isArray(item.availability_ranges) ? item.availability_ranges : [],
+          // enrichi plus bas
+          isVip: false,
+          typeLabel: rawType === 'private_room' ? 'Chambre privée' : 'Logement entier',
+        }
+      })
 
-      const formatted: UiListing[] = rows.map((item) => ({
-        id: item.id,
-        host_id: item.host_id ?? null,
-        created_at: item.created_at ?? null,
-        title: item.title ?? '',
-        location: item.location_name ?? '',
-        location_name: item.location_name ?? '',
-        type: item.type ?? 'private_room',
-        raw_type: item.type ?? 'private_room',
-        price_per_week: Number(item.price_per_week ?? 0),
-        bond: Number(item.bond_amount ?? 0),
-        rating: 4.9,
-        reviews_count: 0,
-        image: item.images?.[0] ?? '',
-        dates: 'Disponible',
-        is_superhost: false,
-        lat: item.lat ?? null,
-        lng: item.lng ?? null,
-        amenities: item.amenities ?? [],
-        women_only: item.women_only ?? false,
-        availability_ranges: item.availability_ranges ?? [],
-        isVip: false,
-      }))
-
-      // ---- VIP lookup via profiles_public (sans Map() pour éviter collision avec component Map) ----
+      // 2) Récup VIP hosts via profiles_public
       const hostIds = Array.from(
         new Set(formatted.map((l) => l.host_id).filter(Boolean))
       ) as string[]
@@ -176,27 +121,28 @@ export default function Home() {
         } else {
           const now = new Date()
           for (const p of profiles || []) {
-            const untilOk = !p.vip_until || new Date(p.vip_until) > now
+            const untilOk = !p.vip_until || new Date(p.vip_until).getTime() > now.getTime()
             vipLookup[p.id] = Boolean(p.vip_active) && untilOk
           }
         }
       }
 
-      // Enrich + tri VIP d’abord, puis created_at DESC
-      const enriched = formatted
-        .map((l) => ({
-          ...l,
-          isVip: l.host_id ? Boolean(vipLookup[l.host_id]) : false,
-        }))
-        .sort((a, b) => {
-          const aVip = a.isVip ? 1 : 0
-          const bVip = b.isVip ? 1 : 0
-          if (aVip !== bVip) return bVip - aVip
+      // 3) Tri: VIP d'abord, puis date desc
+      const sorted = [...formatted].sort((a, b) => {
+        const aVip = a.host_id ? (vipLookup[a.host_id] ? 1 : 0) : 0
+        const bVip = b.host_id ? (vipLookup[b.host_id] ? 1 : 0) : 0
+        if (aVip !== bVip) return bVip - aVip
 
-          const at = a.created_at ? new Date(a.created_at).getTime() : 0
-          const bt = b.created_at ? new Date(b.created_at).getTime() : 0
-          return bt - at
-        })
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+        return bTime - aTime
+      })
+
+      // 4) Enrich isVip
+      const enriched = sorted.map((l) => ({
+        ...l,
+        isVip: l.host_id ? Boolean(vipLookup[l.host_id]) : false,
+      }))
 
       setAllListings(enriched)
       setFilteredListings(enriched)
@@ -207,44 +153,55 @@ export default function Home() {
   }, [supabase])
 
   const handleSearch = () => {
-    if (!searchTerm.trim()) {
+    const term = searchTerm.trim().toLowerCase()
+
+    if (!term) {
       setFilteredListings(allListings)
-    } else {
-      const lower = searchTerm.toLowerCase()
-      setFilteredListings(
-        allListings.filter(
-          (l) =>
-            (l.location || '').toLowerCase().includes(lower) ||
-            (l.title || '').toLowerCase().includes(lower)
-        )
-      )
+      setIsSearchOpen(false)
+      return
     }
+
+    const filtered = allListings.filter((l) => {
+      const loc = (l.location || '').toLowerCase()
+      const title = (l.title || '').toLowerCase()
+      return loc.includes(term) || title.includes(term)
+    })
+
+    setFilteredListings(filtered)
     setIsSearchOpen(false)
   }
 
-  // Filtrage (dates multiples) — identique à ton approche
+  // --- FILTRAGE (DATES MULTIPLES) ---
   const applyFilters = (filters: any) => {
     const result = allListings.filter((l) => {
-      if (l.price_per_week > filters.maxPrice) return false
+      // 1) Prix
+      if (typeof filters.maxPrice === 'number' && (l.price_per_week ?? 0) > filters.maxPrice) return false
+
+      // 2) Type
       if (filters.type !== 'any' && l.raw_type !== filters.type) return false
+
+      // 3) Femmes uniquement
       if (filters.womenOnly && !l.women_only) return false
 
-      if (filters.amenities?.length > 0) {
+      // 4) Équipements
+      if (Array.isArray(filters.amenities) && filters.amenities.length > 0) {
         const hasAll = filters.amenities.every((a: string) => l.amenities.includes(a))
         if (!hasAll) return false
       }
 
+      // 5) Disponibilités
       const ranges = l.availability_ranges
+
+      // Pas de restriction => dispo
       if (!ranges || ranges.length === 0) return true
 
-      const today = new Date().toISOString().split('T')[0]
-
       if (filters.availableNow) {
-        const ok = ranges.some((r) => today >= r.start && today <= r.end)
-        if (!ok) return false
+        const isFreeToday = ranges.some((r) => todayStr >= r.start && todayStr <= r.end)
+        if (!isFreeToday) return false
       } else if (filters.targetDate) {
-        const ok = ranges.some((r) => filters.targetDate >= r.start && filters.targetDate <= r.end)
-        if (!ok) return false
+        const d = String(filters.targetDate)
+        const isFreeAtDate = ranges.some((r) => d >= r.start && d <= r.end)
+        if (!isFreeAtDate) return false
       }
 
       return true
@@ -252,12 +209,6 @@ export default function Home() {
 
     setFilteredListings(result)
   }
-
-  const totalLabel = useMemo(() => {
-    if (loading) return '...'
-    if (filteredListings.length === 0) return 'Aucun résultat'
-    return `${filteredListings.length} logements`
-  }, [loading, filteredListings.length])
 
   return (
     <main className="min-h-screen bg-stone-50 dark:bg-gray-900 pb-24 transition-colors relative">
@@ -283,7 +234,6 @@ export default function Home() {
         <button
           onClick={() => setIsFiltersOpen(true)}
           className="p-3 border border-stone-200 dark:border-gray-700 rounded-full bg-white dark:bg-gray-800"
-          aria-label="Filtres"
         >
           <svg className="w-6 h-6 text-gray-900 dark:text-white" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path
@@ -301,12 +251,13 @@ export default function Home() {
           <button
             onClick={() => setIsSearchOpen(false)}
             className="absolute top-4 left-4 p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-            aria-label="Fermer"
           >
             ✕
           </button>
+
           <div className="mt-16 max-w-lg mx-auto">
             <h2 className="text-2xl font-bold mb-6 dark:text-white">Recherche</h2>
+
             <input
               type="text"
               autoFocus
@@ -316,6 +267,7 @@ export default function Home() {
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
+
             <button
               onClick={handleSearch}
               className="w-full mt-8 bg-rose-500 text-white font-bold py-3.5 rounded-xl text-lg"
@@ -334,7 +286,9 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_45%] gap-8">
           <div className="pb-20">
             <div className="flex justify-between items-end mb-4 px-1">
-              <h2 className="font-semibold text-lg dark:text-white">{totalLabel}</h2>
+              <h2 className="font-semibold text-lg dark:text-white">
+                {loading ? '...' : filteredListings.length > 0 ? `${filteredListings.length} logements` : 'Aucun résultat'}
+              </h2>
 
               {(searchTerm || filteredListings.length !== allListings.length) && (
                 <button
@@ -371,58 +325,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      {/* MODAL MESSAGES */}
-      {isMessagesOpen && <MessagesModal onClose={() => setIsMessagesOpen(false)} />}
-
-      {/* BOTTOM TABS (mobile) — Messages entre Carte et Profil */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md dark:bg-gray-900/95 border-t border-gray-200 dark:border-gray-700 z-50 px-4 py-2 flex justify-around items-center">
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="flex flex-col items-center p-2 text-gray-700 dark:text-gray-300 active:text-rose-500"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3" />
-          </svg>
-          <span className="text-xs mt-1">Accueil</span>
-        </button>
-
-        <button
-          onClick={() => {
-            const el = document.getElementById('map-section')
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }}
-          className="flex flex-col items-center p-2 text-gray-700 dark:text-gray-300 active:text-rose-500"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 01.553-.894L9 2m0 18l6-3m-6 3V2m6 15l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 2" />
-          </svg>
-          <span className="text-xs mt-1">Carte</span>
-        </button>
-
-        <button
-          onClick={() => setIsMessagesOpen(true)}
-          className="flex flex-col items-center p-2 text-gray-700 dark:text-gray-300 active:text-rose-500"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-          <span className="text-xs mt-1">Messages</span>
-        </button>
-
-        <Link
-          href="/profile"
-          className="flex flex-col items-center p-2 text-gray-700 dark:text-gray-300 active:text-rose-500"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m8-10a4 4 0 100-8 4 4 0 000 8z" />
-          </svg>
-          <span className="text-xs mt-1">Profil</span>
-        </Link>
-      </div>
-
-      {/* Ancre carte (optionnel). Si tu veux la carte en mobile, mets un composant carte ici plus tard */}
-      <div id="map-section" className="hidden" />
     </main>
   )
 }
