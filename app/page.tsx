@@ -63,7 +63,8 @@ export default function Home() {
 
       const { data, error } = await supabase
         .from('listings')
-        .select('*')
+        .select('id,host_id,created_at,title,location_name,type,price_per_week,images,lat,lng')
+.limit(200)
         .order('created_at', { ascending: false })
 
       if (error || !data) {
