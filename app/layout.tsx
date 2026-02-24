@@ -1,10 +1,9 @@
-import type { Metadata } from 'next'
 import './globals.css'
 import BottomNav from '@/components/BottomNav'
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'Oozly',
-  description: 'Oozly',
+  description: 'Colocation Australie',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
