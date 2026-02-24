@@ -19,27 +19,29 @@ type AvailabilityRange = { start: string; end: string }
 
 type ListingUI = {
   id: string
-  host_id: string | null
-  created_at: string | null
-  title: string | null
+  host_id?: string // ✅ plus de null
+  created_at?: string // ✅ plus de null
+  title: string
   location: string
   location_name: string
-  raw_type: string | null
-  type: string | null
-  price_per_week: number | null
-  bond: number | null
+  raw_type?: string
+  type?: string
+  price_per_week: number
+  bond?: number
   rating: number
   reviews_count: number
   image: string
   dates: string
   is_superhost: boolean
-  lat: number | null
-  lng: number | null
+  lat?: number
+  lng?: number
   amenities: string[]
-  women_only: boolean | null
+  women_only?: boolean
   availability_ranges: AvailabilityRange[]
   isVip: boolean
   typeLabel: string
+  // garde l’ouverture à d’autres props (ListingCard accepte [key: string]: any)
+  [key: string]: any
 }
 
 export default function Home() {
@@ -53,7 +55,6 @@ export default function Home() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Helpers
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   useEffect(() => {
@@ -73,37 +74,46 @@ export default function Home() {
         return
       }
 
-      // 1) Format de base (proche de ton code original)
+      // 1) Format de base (ne JAMAIS mettre null -> undefined)
       const formatted: ListingUI[] = data.map((item: any) => {
-        const rawType = item.type ?? null
+        const rawType: string | undefined = item.type ?? undefined
+
         return {
-          id: item.id,
-          host_id: item.host_id ?? null,
-          created_at: item.created_at ?? null,
-          title: item.title ?? null,
-          location: item.location_name || 'Lieu inconnu',
-          location_name: item.location_name || 'Lieu inconnu',
+          id: String(item.id),
+
+          host_id: item.host_id ?? undefined,
+          created_at: item.created_at ?? undefined,
+
+          title: item.title ? String(item.title) : '',
+          location: item.location_name ? String(item.location_name) : 'Lieu inconnu',
+          location_name: item.location_name ? String(item.location_name) : 'Lieu inconnu',
+
           raw_type: rawType,
           type: rawType,
-          price_per_week: item.price_per_week ?? null,
-          bond: item.bond_amount ?? null,
+
+          price_per_week: typeof item.price_per_week === 'number' ? item.price_per_week : 0,
+          bond: typeof item.bond_amount === 'number' ? item.bond_amount : undefined,
+
           rating: 4.9,
           reviews_count: 0,
-          image: item.images?.[0] || '',
+
+          image: item.images?.[0] ? String(item.images[0]) : '',
           dates: 'Disponible',
           is_superhost: false,
-          lat: item.lat ?? null,
-          lng: item.lng ?? null,
+
+          lat: typeof item.lat === 'number' ? item.lat : undefined,
+          lng: typeof item.lng === 'number' ? item.lng : undefined,
+
           amenities: Array.isArray(item.amenities) ? item.amenities : [],
-          women_only: item.women_only ?? null,
+          women_only: typeof item.women_only === 'boolean' ? item.women_only : undefined,
           availability_ranges: Array.isArray(item.availability_ranges) ? item.availability_ranges : [],
-          // enrichi plus bas
+
           isVip: false,
           typeLabel: rawType === 'private_room' ? 'Chambre privée' : 'Logement entier',
         }
       })
 
-      // 2) Récup VIP hosts via profiles_public
+      // 2) VIP hosts via profiles_public
       const hostIds = Array.from(
         new Set(formatted.map((l) => l.host_id).filter(Boolean))
       ) as string[]
@@ -119,15 +129,21 @@ export default function Home() {
         if (profilesError) {
           console.warn('profiles_public error:', profilesError)
         } else {
-          const now = new Date()
+          const now = new Date().getTime()
           for (const p of profiles || []) {
-            const untilOk = !p.vip_until || new Date(p.vip_until).getTime() > now.getTime()
-            vipLookup[p.id] = Boolean(p.vip_active) && untilOk
+            const id = String((p as any).id)
+            const vip_active = Boolean((p as any).vip_active)
+
+            const vip_until_raw = (p as any).vip_until as string | null | undefined
+            const untilOk =
+              !vip_until_raw || new Date(vip_until_raw).getTime() > now
+
+            vipLookup[id] = vip_active && untilOk
           }
         }
       }
 
-      // 3) Tri: VIP d'abord, puis date desc
+      // 3) Tri: VIP d'abord, puis created_at desc
       const sorted = [...formatted].sort((a, b) => {
         const aVip = a.host_id ? (vipLookup[a.host_id] ? 1 : 0) : 0
         const bVip = b.host_id ? (vipLookup[b.host_id] ? 1 : 0) : 0
@@ -138,8 +154,8 @@ export default function Home() {
         return bTime - aTime
       })
 
-      // 4) Enrich isVip
-      const enriched = sorted.map((l) => ({
+      // 4) Enrichir isVip
+      const enriched: ListingUI[] = sorted.map((l) => ({
         ...l,
         isVip: l.host_id ? Boolean(vipLookup[l.host_id]) : false,
       }))
@@ -175,7 +191,7 @@ export default function Home() {
   const applyFilters = (filters: any) => {
     const result = allListings.filter((l) => {
       // 1) Prix
-      if (typeof filters.maxPrice === 'number' && (l.price_per_week ?? 0) > filters.maxPrice) return false
+      if (typeof filters.maxPrice === 'number' && l.price_per_week > filters.maxPrice) return false
 
       // 2) Type
       if (filters.type !== 'any' && l.raw_type !== filters.type) return false
