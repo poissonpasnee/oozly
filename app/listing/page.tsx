@@ -1,108 +1,20 @@
-'use client'
-
-import { useEffect, useState, Suspense } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import dynamic from 'next/dynamic'
-
-const Map = dynamic(() => import('@/components/Map'), { 
-  loading: () => <div className="h-64 w-full bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse"/>,
-  ssr: false 
-})
-
-function ListingContent() {
-  const searchParams = useSearchParams()
-  const id = searchParams.get('id') // On récupère l'ID depuis l'URL ?id=...
-
-  const supabase = createClientComponentClient()
-  const router = useRouter()
-  
-  const [listing, setListing] = useState<any>(null)
-  const [host, setHost] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (!id) return 
-
-    const fetchListing = async () => {
-      const { data: listingData, error } = await supabase.from('listings').select('*').eq('id', id).single()
-
-      if (error || !listingData) {
-        setLoading(false)
-        return
-      }
-      setListing(listingData)
-
-      if (listingData.host_id) {
-        const { data: hostData } = await supabase.from('profiles').select('*').eq('id', listingData.host_id).single()
-        setHost(hostData)
-      }
-      setLoading(false)
-    }
-    fetchListing()
-  }, [id, supabase])
-
-  if (loading) return <div className="min-h-screen bg-white dark:bg-gray-900 animate-pulse p-4"><div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4"/><div className="h-8 w-2/3 bg-gray-200 dark:bg-gray-800 rounded mb-4"/></div>
-  
-  if (!listing) return <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center dark:text-white"><h1 className="text-2xl font-bold mb-2">Introuvable</h1><Link href="/" className="text-rose-500 underline">Retour</Link></div>
-
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pb-24 text-gray-900 dark:text-white">
-      <div className="fixed top-0 w-full z-10 flex justify-between p-4 pointer-events-none lg:hidden">
-        <button onClick={() => router.back()} className="bg-white/90 dark:bg-gray-800/90 p-2 rounded-full shadow-sm pointer-events-auto backdrop-blur-sm dark:text-white">←</button>
-      </div>
-
-      <div className="relative h-[300px] lg:h-[400px] w-full bg-gray-200 dark:bg-gray-800">
-        <img src={listing.images?.[0] || 'https://via.placeholder.com/800x600'} className="w-full h-full object-cover" />
-      </div>
-
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold mb-2">{listing.title}</h1>
-        <div className="flex justify-between items-start mb-6">
-           <div><p className="text-gray-500 dark:text-gray-400">{listing.location_name}</p></div>
-           <div className="text-right"><div className="text-2xl font-bold text-rose-500">${listing.price_per_week}</div></div>
-        </div>
-
-        <div className="py-6 border-y border-gray-100 dark:border-gray-800">
-           <h2 className="font-bold text-lg mb-3">Disponibilités</h2>
-           {listing.availability_ranges && listing.availability_ranges.length > 0 ? (
-             <div className="flex flex-wrap gap-2">
-               {listing.availability_ranges.map((range: any, i: number) => (
-                 <div key={i} className="px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-700 dark:text-green-300 font-medium">
-                   Du {new Date(range.start).toLocaleDateString()} au {new Date(range.end).toLocaleDateString()}
-                 </div>
-               ))}
-             </div>
-           ) : <div className="text-gray-500 italic text-sm">Contactez l'hôte.</div>}
-        </div>
-
-        <div className="flex items-center gap-4 py-6 border-b border-gray-100 dark:border-gray-800">
-           <div className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex items-center justify-center font-bold text-gray-400">
-             {host?.avatar_url ? <img src={host.avatar_url} className="w-full h-full object-cover" /> : host?.full_name?.charAt(0) || '?'}
-           </div>
-           <div><div className="font-bold">{host?.full_name || 'Hôte'}</div><div className="text-sm text-gray-500">Vérifié</div></div>
-        </div>
-
-        <div className="py-6 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{listing.description}</div>
-        
-        <div className="h-48 rounded-xl overflow-hidden bg-gray-100 relative z-0 mt-4 border border-gray-200 dark:border-gray-700">
-           <Map listings={[listing]} />
-        </div>
-      </div>
-
-      <div className="fixed bottom-0 left-0 w-full bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 p-4 pb-8 flex justify-between items-center z-20">
-         <div className="font-bold text-lg dark:text-white">${listing.price_per_week}</div>
-         <button className="bg-rose-500 text-white font-bold py-3 px-8 rounded-xl shadow-lg">Contacter</button>
-      </div>
-    </div>
-  )
-}
+import { Suspense } from 'react'
+import ListingClient from './_components/ListingClient'
 
 export default function ListingPage() {
   return (
-    <Suspense fallback={<div className="p-10 text-center">Chargement...</div>}>
-      <ListingContent />
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-stone-50 dark:bg-gray-900 pb-24">
+          <div className="max-w-[1100px] mx-auto px-4 pt-6">
+            <div className="h-10 w-60 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+            <div className="mt-6 h-[320px] bg-gray-100 dark:bg-gray-800 rounded-2xl animate-pulse" />
+            <div className="mt-6 h-40 bg-gray-100 dark:bg-gray-800 rounded-2xl animate-pulse" />
+          </div>
+        </main>
+      }
+    >
+      <ListingClient />
     </Suspense>
   )
 }
