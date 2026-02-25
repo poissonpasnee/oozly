@@ -1,17 +1,21 @@
+// app/layout.tsx
 import './globals.css'
-import BottomNav from '@/components/BottomNav'
+import type { Metadata } from 'next'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Oozly',
-  description: 'Colocation Australie',
+  description: 'Oozly',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="fr">
-      <body className="min-h-screen">
+    <html lang="fr" suppressHydrationWarning>
+      <body className="min-h-screen bg-white text-gray-900 dark:bg-gray-900 dark:text-white">
         {children}
-        <BottomNav />
       </body>
     </html>
   )
