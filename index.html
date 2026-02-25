@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Oozly</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="title">Oozly</div>
+      <a class="btn" href="profile.html" aria-label="Profil">👤</a>
+    </header>
+
+    <main class="container" style="padding-bottom: 90px;">
+      <section class="hero">
+        <h1 class="h1">Trouver une colocation</h1>
+        <p class="muted">Liste d’annonces (Supabase)</p>
+      </section>
+
+      <section id="listings" class="cards">
+        <div class="empty">Chargement…</div>
+      </section>
+    </main>
+
+    <!-- Bottom Nav (injectée) -->
+    <script type="module">
+      import { supabase } from "./supabaseClient.js";
+
+      function mountBottomNav(active) {
+        if (document.getElementById("bottomNav")) return;
+
+        const nav = document.createElement("nav");
+        nav.id = "bottomNav";
+        nav.className = "bottomnav";
+        nav.innerHTML = `
+          <a class="bn-item ${active === "home" ? "active" : ""}" href="index.html" aria-label="Accueil">
+            <span class="bn-ico">🏠</span>
+            <span class="bn-txt">Accueil</span>
+          </a>
+
+          <a class="bn-item ${active === "favorites" ? "active" : ""}" href="favorites.html" aria-label="Favoris">
+            <span class="bn-ico">❤️</span>
+            <span class="bn-txt">Favoris</span>
+          </a>
+
+          <a class="bn-item bn-plus ${active === "publish" ? "active" : ""}" href="publish.html" aria-label="Publier">
+            <span class="bn-plus-inner">＋</span>
+          </a>
+
+          <a class="bn-item ${active === "messages" ? "active" : ""}" href="messages.html" aria-label="Messages">
+            <span class="bn-ico">💬</span>
+            <span class="bn-txt">Messages</span>
+            <span class="bn-badge" id="bottomUnreadBadge" style="display:none;"></span>
+          </a>
+
+          <a class="bn-item ${active === "profile" ? "active" : ""}" href="profile.html" aria-label="Profil">
+            <span class="bn-ico">👤</span>
+            <span class="bn-txt">Profil</span>
+          </a>
+        `;
+        document.body.appendChild(nav);
+      }
+
+      function setBadge(el, count) {
+        if (!el) return;
+        if (count > 0) {
+          el.style.display = "inline-flex";
+          el.textContent = String(count > 99 ? "99+" : count);
+        } else {
+          el.style.display = "none";
+          el.textContent = "";
+        }
+      }
+
+      async function refreshUnreadBadge() {
+        const badge = document.getElementById("bottomUnreadBadge");
+
+        const { data: u } = await supabase.auth.getUser();
+        const user = u?.user;
+        if (!user) {
+          setBadge(badge, 0);
+          return;
+        }
+
+        const { count, error } = await supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("receiver_id", user.id)
+          .eq("read", false);
+
+        if (error) {
+          console.warn("unread badge error:", error);
+          setBadge(badge, 0);
+          return;
+        }
+        setBadge(badge, count || 0);
+      }
+
+      async function esc(str) {
+        return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        }[m]));
+      }
+
+      async function loadListings() {
+        const container = document.getElementById("listings");
+        if (!container) return;
+
+        const { data, error } = await supabase
+          .from("listings")
+          .select("id, title, location_name, price_per_week, images, host_id, created_at")
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (error) {
+          container.innerHTML = `<div class="empty">Erreur: ${error.message}</div>`;
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          container.innerHTML = `<div class="empty">Aucune annonce</div>`;
+          return;
+        }
+
+        container.innerHTML = data.map((l) => {
+          const img = (l.images && l.images[0]) ? l.images[0] : "";
+          const title = (l.title || "Annonce").toString();
+          const loc = (l.location_name || "Lieu").toString();
+          const price = Number(l.price_per_week || 0);
+
+          // lien contact -> messages.html?to=<host_id>&listing=<listing_id>
+          const contactHref = `messages.html?to=${encodeURIComponent(l.host_id)}&listing=${encodeURIComponent(l.id)}`;
+
+          return `
+            <article class="card">
+              <div class="cardImg">
+                ${img ? `<img src="${img}" alt="" />` : `<div class="placeholder">📷</div>`}
+              </div>
+              <div class="cardBody">
+                <div class="cardTitle">${title.replace(/</g,"&lt;")}</div>
+                <div class="cardMeta">${loc.replace(/</g,"&lt;")}</div>
+                <div class="cardPrice"><b>$${price}</b> / semaine</div>
+
+                <div class="cardActions">
+                  <a class="btnPrimary" href="${contactHref}">Contacter</a>
+                  <a class="btnGhost" href="listing.html?id=${encodeURIComponent(l.id)}">Voir</a>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join("");
+      }
+
+      // Mount + init
+      mountBottomNav("home");
+      loadListings();
+      refreshUnreadBadge();
+
+      // Realtime badge (optionnel)
+      (async () => {
+        const { data: u } = await supabase.auth.getUser();
+        const user = u?.user;
+        if (!user) return;
+
+        const ch = supabase
+          .channel(`badge-${user.id}`)
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` }, refreshUnreadBadge)
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` }, refreshUnreadBadge)
+          .subscribe();
+
+        window.addEventListener("beforeunload", () => supabase.removeChannel(ch));
+      })();
+
+      // refresh périodique
+      setInterval(refreshUnreadBadge, 15000);
+    </script>
+  </body>
+</html>
