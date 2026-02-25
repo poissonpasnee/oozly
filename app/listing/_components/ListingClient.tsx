@@ -20,7 +20,7 @@ type ListingRow = {
   couples_accepted: boolean | null
 }
 
-type ProfileRow = {
+type HostPublicRow = {
   id: string
   full_name: string | null
   avatar_url: string | null
@@ -36,7 +36,7 @@ export default function ListingClient() {
 
   const [loading, setLoading] = useState(true)
   const [listing, setListing] = useState<ListingRow | null>(null)
-  const [host, setHost] = useState<ProfileRow | null>(null)
+  const [host, setHost] = useState<HostPublicRow | null>(null)
   const [me, setMe] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -78,14 +78,14 @@ export default function ListingClient() {
       setListing(row)
 
       if (row.host_id) {
-        // ⚠️ adapte ici si ta table publique s’appelle autrement (profiles_public)
-        const { data: p } = await supabase
-          .from('profiles')
+        const { data: p, error: pErr } = await supabase
+          .from('profiles_public')
           .select('id,full_name,avatar_url,bio')
           .eq('id', row.host_id)
           .maybeSingle()
 
-        if (p) setHost(p as ProfileRow)
+        if (pErr) console.warn('profiles_public error:', pErr)
+        if (p) setHost(p as HostPublicRow)
       }
 
       setLoading(false)
@@ -95,15 +95,13 @@ export default function ListingClient() {
   const contactHost = async () => {
     if (!listing?.host_id) return
 
-    // Si pas connecté : redirection login (adapte si ta route login est différente)
     if (!me) {
-      router.push(`/login`)
+      router.push('/login')
       return
     }
 
-    // Ouvre messages -> MessagesClient appellera RPC find_or_create_conversation
-    const url = `/messages?to=${listing.host_id}&listing=${listing.id}`
-    router.push(url)
+    // ✅ ouvre (ou crée via RPC côté /messages) une conversation liée à l’annonce
+    router.push(`/messages?to=${listing.host_id}&listing=${listing.id}`)
   }
 
   if (loading) {
@@ -141,9 +139,7 @@ export default function ListingClient() {
           Retour
         </Link>
 
-        <h1 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">
-          {listing.title}
-        </h1>
+        <h1 className="mt-3 text-2xl font-extrabold text-gray-900 dark:text-white">{listing.title}</h1>
 
         <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           {listing.location_name || 'Lieu non précisé'}
@@ -153,14 +149,11 @@ export default function ListingClient() {
           <img src={image} alt={listing.title} className="w-full h-[320px] object-cover" />
         </div>
 
-        {/* Bloc hôte style Airbnb */}
+        {/* ✅ Bloc hôte cliquable + bouton contacter */}
         {listing.host_id && (
           <div className="mt-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
             <div className="flex items-center justify-between gap-3">
-              <Link
-                href={`/profile/${listing.host_id}`}
-                className="flex items-center gap-3 min-w-0"
-              >
+              <Link href={`/profile/${listing.host_id}`} className="flex items-center gap-3 min-w-0">
                 <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                   {host?.avatar_url ? (
                     <img src={host.avatar_url} className="w-full h-full object-cover" />
@@ -191,7 +184,6 @@ export default function ListingClient() {
           </div>
         )}
 
-        {/* Détails */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-[1fr_340px] gap-4">
           <section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
             <div className="text-sm font-extrabold text-gray-900 dark:text-white">Description</div>
@@ -201,9 +193,7 @@ export default function ListingClient() {
 
             {listing.amenities && listing.amenities.length > 0 && (
               <>
-                <div className="mt-5 text-sm font-extrabold text-gray-900 dark:text-white">
-                  Équipements
-                </div>
+                <div className="mt-5 text-sm font-extrabold text-gray-900 dark:text-white">Équipements</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {listing.amenities.map((a) => (
                     <span
@@ -237,9 +227,7 @@ export default function ListingClient() {
               Envoyer un message
             </button>
 
-            <div className="mt-3 text-xs text-gray-400">
-              Tu arriveras sur une conversation dédiée à cette annonce.
-            </div>
+            <div className="mt-3 text-xs text-gray-400">Conversation dédiée à cette annonce.</div>
           </aside>
         </div>
       </div>
