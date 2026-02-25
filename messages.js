@@ -1,36 +1,24 @@
+// messages.js
 import { supabase } from "./supabaseClient.js";
+import { initUnreadBadge } from "./unreadBadge.js";
 
-/**
- * Requis côté DB:
- * - conversations(participant1_id, participant2_id, listing_id, last_message, last_message_at, updated_at)
- * - messages(sender_id, receiver_id, conversation_id, listing_id, content, read, created_at)
- * - RPC: find_or_create_conversation(partner_id uuid, p_listing_id uuid default null) returns uuid
- * - RPC: mark_conversation_read(convo_id uuid) returns void
- */
-
-const qs = new URLSearchParams(location.search);
-const toUserId = qs.get("to");         // /messages.html?to=<uuid>
-const listingId = qs.get("listing");   // optionnel
-
-const convoListEl = document.getElementById("convoList");
-const messagesListEl = document.getElementById("messagesList");
-const msgInputEl = document.getElementById("msgInput");
-const sendBtn = document.getElementById("sendBtn");
-const logoutBtn = document.getElementById("logoutBtn");
-const markReadBtn = document.getElementById("markReadBtn");
-const chatTitleEl = document.getElementById("chatTitle");
-const globalUnreadBadge = document.getElementById("globalUnreadBadge");
+const els = {
+  logoutBtn: document.getElementById("logoutBtn"),
+  convoList: document.getElementById("convoList"),
+  chatTitle: document.getElementById("chatTitle"),
+  messagesList: document.getElementById("messagesList"),
+  msgInput: document.getElementById("msgInput"),
+  sendBtn: document.getElementById("sendBtn"),
+  markReadBtn: document.getElementById("markReadBtn"),
+};
 
 let me = null;
-let activeConversationId = null;
-let activePartnerId = null;
-let activeListingId = null;
+let currentConversationId = null;
+let currentOtherUserId = null;
 
-let channelAll = null;
-let channelActive = null;
-
-function escapeHtml(s = "") {
-  return String(s).replace(/[&<>"']/g, (m) => ({
+// --- Utils ---
+function esc(str) {
+  return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
@@ -39,322 +27,353 @@ function escapeHtml(s = "") {
   }[m]));
 }
 
-function setEmpty(el, text) {
-  el.innerHTML = `<div class="empty">${escapeHtml(text)}</div>`;
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
 }
 
+function setActiveConvoRow(convoId) {
+  document.querySelectorAll(".conversation-item").forEach((el) => el.classList.remove("active"));
+  const row = document.querySelector(`[data-convo-id="${convoId}"]`);
+  if (row) row.classList.add("active");
+}
+
+// --- Auth ---
 async function requireAuth() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) console.warn("getSession error:", error);
-
-  me = data?.session?.user || null;
-  if (!me) {
-    alert("Connecte-toi d'abord.");
-    location.href = "index.html";
-    return false;
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) {
+    window.location.href = "login.html";
+    return null;
   }
-  return true;
+  return data.user;
 }
 
-async function logout() {
-  await supabase.auth.signOut();
-  location.href = "index.html";
+// --- Conversations query (adapté à ton schéma) ---
+async function fetchConversations() {
+  // On récupère les convos où je suis participant1 ou participant2
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id, listing_id, participant1_id, participant2_id, last_message, last_message_at, updated_at")
+    .or(`participant1_id.eq.${me.id},participant2_id.eq.${me.id}`)
+    .order("last_message_at", { ascending: false, nullsFirst: false });
+
+  if (error) {
+    console.warn("fetchConversations error:", error);
+    return [];
+  }
+  return data || [];
 }
 
-function renderConversations(rows) {
-  convoListEl.innerHTML = rows.map((c) => {
-    const isActive = c.id === activeConversationId;
-    const last = c.last_message ? escapeHtml(c.last_message) : "…";
-    const time = c.last_message_at ? new Date(c.last_message_at).toLocaleString() : "";
-    const unread = Number(c.unread_count || 0);
-
-    // partner = l'autre participant
-    const partner = c.participant1_id === me.id ? c.participant2_id : c.participant1_id;
-
-    return `
-      <button class="row ${isActive ? "active" : ""}" 
-              data-id="${c.id}"
-              data-partner="${partner}"
-              data-listing="${c.listing_id || ""}">
-        <div class="rowMain">
-          <div class="rowTitle">Conversation</div>
-          <div class="rowSub">${last}</div>
-          <div class="rowSub">${escapeHtml(time)}</div>
-        </div>
-        ${unread > 0 ? `<div class="pill">${unread > 99 ? "99+" : unread}</div>` : ""}
-      </button>
-    `;
-  }).join("");
-
-  convoListEl.querySelectorAll("button[data-id]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const convoId = btn.dataset.id;
-      const partner = btn.dataset.partner || null;
-      const listing = btn.dataset.listing || null;
-      await openConversation(convoId, partner, listing || null);
-    });
-  });
-}
-
-function renderMessages(msgs) {
-  messagesListEl.innerHTML = msgs.map((m) => {
-    const mine = m.sender_id === me.id;
-    const ts = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-    return `
-      <div class="bubbleWrap ${mine ? "mine" : ""}">
-        <div class="bubble ${mine ? "mine" : ""}">
-          ${escapeHtml(m.content)}
-          <div class="time">${escapeHtml(ts)}</div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  messagesListEl.scrollTop = messagesListEl.scrollHeight;
-}
-
-async function countUnreadGlobal() {
-  const { count, error } = await supabase
+async function fetchUnreadByConversation() {
+  // On calcule les non-lus par conversation pour moi
+  // (read=false et receiver_id = moi)
+  const { data, error } = await supabase
     .from("messages")
-    .select("id", { count: "exact", head: true })
+    .select("conversation_id, id")
     .eq("receiver_id", me.id)
     .eq("read", false);
 
   if (error) {
-    console.warn("count unread global error:", error);
-    globalUnreadBadge.style.display = "none";
-    return 0;
-  }
-
-  const total = Number(count || 0);
-  if (total > 0) {
-    globalUnreadBadge.style.display = "inline-flex";
-    globalUnreadBadge.textContent = total > 99 ? "99+" : String(total);
-  } else {
-    globalUnreadBadge.style.display = "none";
-  }
-  return total;
-}
-
-async function getUnreadByConversation(convoIds) {
-  if (!convoIds.length) return new Map();
-
-  // Simple et efficace: 1 requête pour récupérer les messages non lus et compter côté JS
-  // (Si tu veux ultra perf, on peut faire une view/RPC group by)
-  const { data, error } = await supabase
-    .from("messages")
-    .select("conversation_id")
-    .in("conversation_id", convoIds)
-    .eq("receiver_id", me.id)
-    .eq("read", false)
-    .limit(5000);
-
-  if (error) {
-    console.warn("unread by convo error:", error);
+    console.warn("fetchUnreadByConversation error:", error);
     return new Map();
   }
 
   const map = new Map();
-  for (const r of data || []) {
-    const id = r.conversation_id;
-    map.set(id, (map.get(id) || 0) + 1);
+  for (const row of data || []) {
+    const k = row.conversation_id;
+    if (!k) continue;
+    map.set(k, (map.get(k) || 0) + 1);
   }
   return map;
 }
 
-async function loadConversations() {
-  // Récupérer toutes mes conversations
+async function renderConversations() {
+  const [convos, unreadMap] = await Promise.all([fetchConversations(), fetchUnreadByConversation()]);
+
+  if (!els.convoList) return;
+
+  if (!convos.length) {
+    els.convoList.innerHTML = `<div class="empty">Aucune conversation</div>`;
+    return;
+  }
+
+  els.convoList.innerHTML = convos
+    .map((c) => {
+      const otherId = c.participant1_id === me.id ? c.participant2_id : c.participant1_id;
+      const unread = unreadMap.get(c.id) || 0;
+      const title = otherId ? `Utilisateur ${otherId.slice(0, 6)}…` : "Utilisateur";
+      const last = c.last_message ? esc(c.last_message) : "Aucun message";
+      const time = c.last_message_at ? fmtTime(c.last_message_at) : "";
+
+      return `
+        <div class="conversation-item" data-convo-id="${c.id}" data-other-id="${otherId || ""}">
+          <div class="row">
+            <div class="left">
+              <div class="name">${title}</div>
+              <div class="preview">${last}</div>
+            </div>
+            <div class="right">
+              <div class="time">${time}</div>
+              ${unread > 0 ? `<div class="pill">${unread > 99 ? "99+" : unread}</div>` : ``}
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  // click handlers
+  document.querySelectorAll(".conversation-item").forEach((item) => {
+    item.addEventListener("click", async () => {
+      const convoId = item.getAttribute("data-convo-id");
+      const otherId = item.getAttribute("data-other-id");
+      if (!convoId) return;
+      currentConversationId = convoId;
+      currentOtherUserId = otherId || null;
+
+      setActiveConvoRow(convoId);
+
+      els.chatTitle.textContent = otherId ? `Chat (${otherId.slice(0, 6)}…)` : "Chat";
+      await loadMessages(convoId);
+      await markConversationRead(convoId); // on marque lu dès ouverture (option fluide)
+    });
+  });
+
+  // Si aucune convo sélectionnée, sélectionner la première
+  if (!currentConversationId && convos[0]?.id) {
+    const firstId = convos[0].id;
+    const firstOther = convos[0].participant1_id === me.id ? convos[0].participant2_id : convos[0].participant1_id;
+    currentConversationId = firstId;
+    currentOtherUserId = firstOther || null;
+    setActiveConvoRow(firstId);
+    els.chatTitle.textContent = firstOther ? `Chat (${firstOther.slice(0, 6)}…)` : "Chat";
+    await loadMessages(firstId);
+    await markConversationRead(firstId);
+  }
+}
+
+// --- Messages ---
+async function fetchMessages(convoId) {
   const { data, error } = await supabase
-    .from("conversations")
-    .select("id, listing_id, participant1_id, participant2_id, last_message, last_message_at, updated_at, created_at")
-    .or(`participant1_id.eq.${me.id},participant2_id.eq.${me.id}`)
-    .order("last_message_at", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .limit(200);
+    .from("messages")
+    .select("id, sender_id, receiver_id, content, created_at, read, read_at")
+    .eq("conversation_id", convoId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
 
   if (error) {
-    console.warn("load conversations error:", error);
-    setEmpty(convoListEl, "Erreur chargement conversations.");
+    console.warn("fetchMessages error:", error);
     return [];
   }
-
-  const rows = data || [];
-  const ids = rows.map((c) => c.id);
-
-  const unreadMap = await getUnreadByConversation(ids);
-
-  const enriched = rows.map((c) => ({
-    ...c,
-    unread_count: unreadMap.get(c.id) || 0,
-  }));
-
-  renderConversations(enriched);
-
-  // auto-select si rien d’ouvert
-  if (!activeConversationId && enriched.length > 0) {
-    const c0 = enriched[0];
-    const partner = c0.participant1_id === me.id ? c0.participant2_id : c0.participant1_id;
-    await openConversation(c0.id, partner, c0.listing_id || null);
-  }
-
-  await countUnreadGlobal();
-  return enriched;
+  return data || [];
 }
 
 async function loadMessages(convoId) {
-  const { data, error } = await supabase
-    .from("messages")
-    .select("id, conversation_id, sender_id, receiver_id, content, created_at, read")
-    .eq("conversation_id", convoId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(500);
+  const msgs = await fetchMessages(convoId);
 
-  if (error) {
-    console.warn("load messages error:", error);
-    setEmpty(messagesListEl, "Erreur chargement messages.");
-    return [];
-  }
+  if (!els.messagesList) return;
 
-  const msgs = data || [];
-  renderMessages(msgs);
-  return msgs;
-}
-
-async function openConversation(convoId, partnerId, listing) {
-  activeConversationId = convoId;
-  activePartnerId = partnerId;
-  activeListingId = listing;
-
-  chatTitleEl.textContent = "Chat";
-
-  await loadMessages(convoId);
-
-  // Marquer lu
-  await supabase.rpc("mark_conversation_read", { convo_id: convoId });
-
-  // Rafraîchir badges
-  await loadConversations();
-
-  // Realtime pour la convo active (plus fluide)
-  if (channelActive) {
-    await supabase.removeChannel(channelActive);
-    channelActive = null;
-  }
-
-  channelActive = supabase
-    .channel("rt-active-" + convoId)
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convoId}` },
-      async (payload) => {
-        const m = payload.new;
-        // Si je reçois un message dans la convo active -> mark read automatiquement
-        if (m.receiver_id === me.id) {
-          await supabase.rpc("mark_conversation_read", { convo_id: convoId });
-        }
-        await loadMessages(convoId);
-        await loadConversations();
-      }
-    )
-    .subscribe();
-}
-
-async function ensureConversationFromQuery() {
-  // Si on arrive depuis une annonce ou un profil
-  if (!toUserId) return;
-
-  const { data: convoId, error } = await supabase.rpc("find_or_create_conversation", {
-    partner_id: toUserId,
-    p_listing_id: listingId || null,
-  });
-
-  if (error) {
-    console.warn("find_or_create_conversation error:", error);
+  if (!msgs.length) {
+    els.messagesList.innerHTML = `<div class="empty">Aucun message</div>`;
     return;
   }
 
-  // on ouvre
-  activeConversationId = convoId;
-  activePartnerId = toUserId;
-  activeListingId = listingId || null;
+  els.messagesList.innerHTML = msgs
+    .map((m) => {
+      const mine = m.sender_id === me.id;
+      return `
+        <div class="msg ${mine ? "mine" : "theirs"}">
+          <div class="bubble">
+            <div class="text">${esc(m.content)}</div>
+            <div class="meta">
+              <span>${fmtTime(m.created_at)}</span>
+              ${mine ? `<span class="status">${m.read ? "Lu" : "Envoyé"}</span>` : ``}
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 
-  await openConversation(convoId, toUserId, listingId || null);
+  // scroll bas
+  els.messagesList.scrollTop = els.messagesList.scrollHeight;
 }
 
 async function sendMessage() {
-  const content = msgInputEl.value.trim();
+  const content = (els.msgInput?.value || "").trim();
   if (!content) return;
+  if (!currentConversationId) return;
 
-  if (!activeConversationId || !activePartnerId) {
-    alert("Sélectionne une conversation.");
-    return;
-  }
+  // détermination receiver_id : l'autre participant
+  const receiverId = currentOtherUserId;
+  if (!receiverId) return;
 
-  msgInputEl.value = "";
+  // option: anti double click
+  els.sendBtn.disabled = true;
 
-  // Insert message (ton schéma)
   const { error } = await supabase.from("messages").insert({
-    conversation_id: activeConversationId,
+    conversation_id: currentConversationId,
     sender_id: me.id,
-    receiver_id: activePartnerId,
-    listing_id: activeListingId || null,
+    receiver_id: receiverId,
     content,
     read: false,
-    status: "sent",
   });
 
+  els.sendBtn.disabled = false;
+
   if (error) {
-    console.warn("send message error:", error);
-    alert("Erreur: " + error.message);
+    alert("Erreur envoi: " + error.message);
     return;
   }
 
-  // Optimisation: la preview conversation est maintenue par trigger côté DB (si tu l'as ajouté)
-  await loadMessages(activeConversationId);
-  await loadConversations();
+  els.msgInput.value = "";
+  // la realtime rafraîchira; mais on peut aussi reload immédiatement pour le côté “fluide”
+  await loadMessages(currentConversationId);
 }
 
-async function markRead() {
-  if (!activeConversationId) return;
-  await supabase.rpc("mark_conversation_read", { convo_id: activeConversationId });
-  await loadConversations();
+async function markConversationRead(convoId) {
+  // Marque read=true sur tous les messages reçus (receiver_id = moi) dans la conversation
+  const { error } = await supabase
+    .from("messages")
+    .update({ read: true, read_at: new Date().toISOString() })
+    .eq("conversation_id", convoId)
+    .eq("receiver_id", me.id)
+    .eq("read", false);
+
+  if (error) {
+    console.warn("markConversationRead error:", error);
+  }
 }
 
-async function initRealtimeGlobal() {
-  // Un seul canal global pour rafraîchir badges + liste quand un message arrive
-  if (channelAll) return;
+// --- Options utiles ---
+async function ensureConversation(otherUserId, listingId = null) {
+  // Crée ou récupère une conversation existante entre 2 users (+ listing_id optionnel)
+  // IMPORTANT: on cherche dans conversations via participant1/participant2 (+ listing_id si fourni)
+  const baseOr = `and(participant1_id.eq.${me.id},participant2_id.eq.${otherUserId}),and(participant1_id.eq.${otherUserId},participant2_id.eq.${me.id})`;
 
-  channelAll = supabase
-    .channel("rt-messages-global")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-      const m = payload.new;
-      // si message me concerne, on refresh
-      if (m.sender_id === me.id || m.receiver_id === me.id) {
-        await loadConversations();
-        if (activeConversationId && m.conversation_id === activeConversationId) {
-          await loadMessages(activeConversationId);
-          if (m.receiver_id === me.id) {
-            await supabase.rpc("mark_conversation_read", { convo_id: activeConversationId });
-          }
+  let query = supabase
+    .from("conversations")
+    .select("id, participant1_id, participant2_id, listing_id")
+    .or(baseOr);
+
+  if (listingId) query = query.eq("listing_id", listingId);
+
+  const { data: found, error: findErr } = await query.limit(1);
+
+  if (findErr) {
+    console.warn("ensureConversation find error:", findErr);
+  }
+
+  if (found && found.length > 0) return found[0].id;
+
+  // create
+  const { data: created, error: createErr } = await supabase
+    .from("conversations")
+    .insert({
+      participant1_id: me.id,
+      participant2_id: otherUserId,
+      listing_id: listingId,
+      last_message: null,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (createErr) {
+    console.warn("ensureConversation create error:", createErr);
+    throw createErr;
+  }
+
+  return created.id;
+}
+
+// --- Realtime ---
+function setupRealtime() {
+  // Realtime sur messages: quand un message arrive dans une conversation où je suis sender/receiver
+  const channel = supabase
+    .channel(`messages-live-${me.id}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${me.id}` },
+      async (payload) => {
+        // Si j'ai la conversation ouverte, on reload + mark read
+        await renderConversations();
+        if (payload?.new?.conversation_id && payload.new.conversation_id === currentConversationId) {
+          await loadMessages(currentConversationId);
+          await markConversationRead(currentConversationId);
         }
       }
-    })
+    )
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "messages", filter: `sender_id=eq.${me.id}` },
+      async () => {
+        await renderConversations();
+        if (currentConversationId) await loadMessages(currentConversationId);
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${me.id}` },
+      async () => {
+        await renderConversations();
+        if (currentConversationId) await loadMessages(currentConversationId);
+      }
+    )
     .subscribe();
+
+  window.addEventListener("beforeunload", () => {
+    supabase.removeChannel(channel);
+  });
 }
 
-logoutBtn.addEventListener("click", logout);
-sendBtn.addEventListener("click", sendMessage);
-msgInputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-markReadBtn.addEventListener("click", markRead);
+// --- Bootstrap ---
+async function init() {
+  me = await requireAuth();
+  if (!me) return;
 
-(async function main() {
-  const ok = await requireAuth();
-  if (!ok) return;
+  // Badge non-lu global
+  await initUnreadBadge();
 
-  await initRealtimeGlobal();
-  await loadConversations();
-  await ensureConversationFromQuery();
-})();
+  // Logout
+  els.logoutBtn?.addEventListener("click", async () => {
+    await supabase.auth.signOut();
+    window.location.href = "login.html";
+  });
+
+  // Envoi
+  els.sendBtn?.addEventListener("click", sendMessage);
+  els.msgInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendMessage();
+  });
+
+  // Marquer lu
+  els.markReadBtn?.addEventListener("click", async () => {
+    if (!currentConversationId) return;
+    await markConversationRead(currentConversationId);
+    await renderConversations();
+    await loadMessages(currentConversationId);
+  });
+
+  // Si on arrive avec ?to=<userId>&listing=<listingId> (depuis annonce/profil)
+  const url = new URL(window.location.href);
+  const to = url.searchParams.get("to");
+  const listing = url.searchParams.get("listing");
+
+  if (to) {
+    try {
+      const convoId = await ensureConversation(to, listing || null);
+      currentConversationId = convoId;
+      currentOtherUserId = to;
+    } catch (e) {
+      alert("Impossible de créer la conversation.");
+    }
+  }
+
+  await renderConversations();
+  setupRealtime();
+}
+
+init();
