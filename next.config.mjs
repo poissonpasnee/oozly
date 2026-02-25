@@ -1,13 +1,15 @@
+// next.config.mjs
+const repo = 'poissonpasnee' // ✅ remplace par le NOM EXACT de ton repo GitHub si différent
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  trailingSlash: true,
-
-  // GitHub Pages ne supporte pas l'optimisation d'images Next côté serveur
+  output: 'export',          // ✅ remplace "next export"
+  trailingSlash: true,       // ✅ évite des 404 sur GitHub Pages
   images: { unoptimized: true },
 
-  // Important pour que le build sorte bien un dossier /out
-  reactStrictMode: true,
+  // ✅ indispensable si ton site est sur https://USERNAME.github.io/REPO/
+  basePath: `/${repo}`,
+  assetPrefix: `/${repo}/`,
 }
 
 export default nextConfig
