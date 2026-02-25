@@ -1,13 +1,12 @@
 // next.config.mjs
-const repo = 'poissonpasnee' // ✅ remplace par le NOM EXACT de ton repo GitHub si différent
+const repo = 'oozly'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',          // ✅ remplace "next export"
-  trailingSlash: true,       // ✅ évite des 404 sur GitHub Pages
+  output: 'export',
+  trailingSlash: true,
   images: { unoptimized: true },
 
-  // ✅ indispensable si ton site est sur https://USERNAME.github.io/REPO/
   basePath: `/${repo}`,
   assetPrefix: `/${repo}/`,
 }
