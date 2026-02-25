@@ -168,7 +168,7 @@ export default function MessagesClient() {
     }, 50)
   }
 
-  // ✅ CORRIGÉ: receiver_id obligatoire dans ta table messages
+  // ✅ Envoi compatible avec ta table messages (receiver_id NOT NULL)
   const sendMessage = async () => {
     if (!me || !activeConvoId) return
     const content = text.trim()
@@ -176,25 +176,27 @@ export default function MessagesClient() {
 
     setText('')
 
-    const { data: convo, error: cErr } = await supabase
+    // 1) Récupérer participants pour trouver receiver_id
+    const { data: convo, error: convoErr } = await supabase
       .from('conversations')
-      .select('participant1_id,participant2_id,listing_id')
+      .select('participant1_id, participant2_id, listing_id')
       .eq('id', activeConvoId)
       .single()
 
-    if (cErr || !convo) {
-      setErrorMsg(cErr?.message || 'Conversation introuvable')
+    if (convoErr || !convo) {
+      setErrorMsg(convoErr?.message || 'Conversation introuvable')
       return
     }
 
-    const receiverId =
-      convo.participant1_id === me ? convo.participant2_id : convo.participant1_id
+    // 2) Déterminer le receiver
+    const receiverId = convo.participant1_id === me ? convo.participant2_id : convo.participant1_id
 
     if (!receiverId) {
-      setErrorMsg('receiver_id introuvable pour cette conversation')
+      setErrorMsg('receiver_id introuvable')
       return
     }
 
+    // 3) Optimistic UI
     const optimistic: MessageRow = {
       id: `optimistic-${Date.now()}`,
       conversation_id: activeConvoId,
@@ -208,6 +210,7 @@ export default function MessagesClient() {
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
     }, 10)
 
+    // 4) Insert réel
     const { error } = await supabase.from('messages').insert({
       conversation_id: activeConvoId,
       sender_id: me,
@@ -286,7 +289,7 @@ export default function MessagesClient() {
         return
       }
 
-      const convoId = (data as any)?.conversation_id || data
+      const convoId = (data as any)?.conversation_id || (data as any)
       if (convoId) setActiveConvoId(convoId)
       loadConversations(me)
     })()
@@ -325,9 +328,7 @@ export default function MessagesClient() {
                 {convos.map((c) => {
                   const active = c.id === activeConvoId
                   const last = c.lastMessage?.content || '…'
-                  const time = c.lastMessage?.created_at
-                    ? new Date(c.lastMessage.created_at).toLocaleString()
-                    : ''
+                  const time = c.lastMessage?.created_at ? new Date(c.lastMessage.created_at).toLocaleString() : ''
 
                   return (
                     <button
@@ -340,12 +341,8 @@ export default function MessagesClient() {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="text-sm font-extrabold text-gray-900 dark:text-white truncate">
-                            Conversation
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                            {last}
-                          </div>
+                          <div className="text-sm font-extrabold text-gray-900 dark:text-white truncate">Conversation</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{last}</div>
                           <div className="text-[11px] text-gray-400 mt-1">{time}</div>
                         </div>
 
@@ -390,17 +387,12 @@ export default function MessagesClient() {
                       <div
                         className={cn(
                           'max-w-[78%] px-4 py-2 rounded-2xl text-sm leading-relaxed',
-                          mine
-                            ? 'bg-rose-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
+                          mine ? 'bg-rose-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
                         )}
                       >
                         {m.content}
                         <div className={cn('text-[10px] mt-1 opacity-70', mine ? 'text-white' : '')}>
-                          {new Date(m.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </div>
                     </div>
@@ -427,8 +419,7 @@ export default function MessagesClient() {
               </div>
 
               <div className="mt-2 text-[11px] text-gray-400">
-                Ouvrir depuis annonce/profil:{' '}
-                <span className="font-mono">/messages?to=USER_UUID</span>
+                Ouvrir depuis annonce/profil: <span className="font-mono">/messages?to=USER_UUID</span>
               </div>
             </div>
           </div>
