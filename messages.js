@@ -1,22 +1,29 @@
 // messages.js
 import { supabase } from "./supabaseClient.js";
-import { initUnreadBadge } from "./unreadBadge.js";
 
-const els = {
-  logoutBtn: document.getElementById("logoutBtn"),
-  convoList: document.getElementById("convoList"),
-  chatTitle: document.getElementById("chatTitle"),
-  messagesList: document.getElementById("messagesList"),
-  msgInput: document.getElementById("msgInput"),
-  sendBtn: document.getElementById("sendBtn"),
-  markReadBtn: document.getElementById("markReadBtn"),
-};
+/* =========================
+   DOM
+========================= */
+const logoutBtn = document.getElementById("logoutBtn");
+const convoList = document.getElementById("convoList");
+const chatTitle = document.getElementById("chatTitle");
+const messagesList = document.getElementById("messagesList");
+const msgInput = document.getElementById("msgInput");
+const sendBtn = document.getElementById("sendBtn");
+const markReadBtn = document.getElementById("markReadBtn");
+const globalUnreadBadge = document.getElementById("globalUnreadBadge");
 
+/* =========================
+   State
+========================= */
 let me = null;
 let currentConversationId = null;
 let currentOtherUserId = null;
+let channel = null;
 
-// --- Utils ---
+/* =========================
+   Utils
+========================= */
 function esc(str) {
   return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
     "&": "&amp;",
@@ -30,16 +37,34 @@ function esc(str) {
 function fmtTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
+  return d.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-function setActiveConvoRow(convoId) {
-  document.querySelectorAll(".conversation-item").forEach((el) => el.classList.remove("active"));
+function setBadge(el, count) {
+  if (!el) return;
+  if (count > 0) {
+    el.style.display = "inline-flex";
+    el.textContent = String(count > 99 ? "99+" : count);
+  } else {
+    el.style.display = "none";
+    el.textContent = "";
+  }
+}
+
+function setActiveConvo(convoId) {
+  document.querySelectorAll(".conversation-item").forEach((x) => x.classList.remove("active"));
   const row = document.querySelector(`[data-convo-id="${convoId}"]`);
   if (row) row.classList.add("active");
 }
 
-// --- Auth ---
+/* =========================
+   Auth
+========================= */
 async function requireAuth() {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
@@ -49,9 +74,29 @@ async function requireAuth() {
   return data.user;
 }
 
-// --- Conversations query (adapté à ton schéma) ---
+/* =========================
+   Unread count (global)
+========================= */
+async function refreshGlobalUnread() {
+  if (!me) return;
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("receiver_id", me.id)
+    .eq("read", false);
+
+  if (error) {
+    console.warn("refreshGlobalUnread error:", error);
+    setBadge(globalUnreadBadge, 0);
+    return;
+  }
+  setBadge(globalUnreadBadge, count || 0);
+}
+
+/* =========================
+   Conversations
+========================= */
 async function fetchConversations() {
-  // On récupère les convos où je suis participant1 ou participant2
   const { data, error } = await supabase
     .from("conversations")
     .select("id, listing_id, participant1_id, participant2_id, last_message, last_message_at, updated_at")
@@ -66,8 +111,6 @@ async function fetchConversations() {
 }
 
 async function fetchUnreadByConversation() {
-  // On calcule les non-lus par conversation pour moi
-  // (read=false et receiver_id = moi)
   const { data, error } = await supabase
     .from("messages")
     .select("conversation_id, id")
@@ -90,18 +133,21 @@ async function fetchUnreadByConversation() {
 
 async function renderConversations() {
   const [convos, unreadMap] = await Promise.all([fetchConversations(), fetchUnreadByConversation()]);
+  await refreshGlobalUnread();
 
-  if (!els.convoList) return;
+  if (!convoList) return;
 
   if (!convos.length) {
-    els.convoList.innerHTML = `<div class="empty">Aucune conversation</div>`;
+    convoList.innerHTML = `<div class="empty">Aucune conversation</div>`;
     return;
   }
 
-  els.convoList.innerHTML = convos
+  convoList.innerHTML = convos
     .map((c) => {
       const otherId = c.participant1_id === me.id ? c.participant2_id : c.participant1_id;
       const unread = unreadMap.get(c.id) || 0;
+
+      // Libellé simple (tu peux l'améliorer si tu exposes un profiles_public)
       const title = otherId ? `Utilisateur ${otherId.slice(0, 6)}…` : "Utilisateur";
       const last = c.last_message ? esc(c.last_message) : "Aucun message";
       const time = c.last_message_at ? fmtTime(c.last_message_at) : "";
@@ -123,37 +169,42 @@ async function renderConversations() {
     })
     .join("");
 
-  // click handlers
   document.querySelectorAll(".conversation-item").forEach((item) => {
     item.addEventListener("click", async () => {
       const convoId = item.getAttribute("data-convo-id");
       const otherId = item.getAttribute("data-other-id");
       if (!convoId) return;
+
       currentConversationId = convoId;
       currentOtherUserId = otherId || null;
 
-      setActiveConvoRow(convoId);
+      setActiveConvo(convoId);
+      chatTitle.textContent = otherId ? `Chat (${otherId.slice(0, 6)}…)` : "Chat";
 
-      els.chatTitle.textContent = otherId ? `Chat (${otherId.slice(0, 6)}…)` : "Chat";
       await loadMessages(convoId);
-      await markConversationRead(convoId); // on marque lu dès ouverture (option fluide)
+      await markConversationRead(convoId); // fluide: lu dès ouverture
+      await renderConversations(); // met à jour les badges
     });
   });
 
-  // Si aucune convo sélectionnée, sélectionner la première
+  // Auto-select première conversation si aucune sélection
   if (!currentConversationId && convos[0]?.id) {
-    const firstId = convos[0].id;
-    const firstOther = convos[0].participant1_id === me.id ? convos[0].participant2_id : convos[0].participant1_id;
-    currentConversationId = firstId;
-    currentOtherUserId = firstOther || null;
-    setActiveConvoRow(firstId);
-    els.chatTitle.textContent = firstOther ? `Chat (${firstOther.slice(0, 6)}…)` : "Chat";
-    await loadMessages(firstId);
-    await markConversationRead(firstId);
+    const first = convos[0];
+    currentConversationId = first.id;
+    currentOtherUserId = first.participant1_id === me.id ? first.participant2_id : first.participant1_id;
+
+    setActiveConvo(first.id);
+    chatTitle.textContent = currentOtherUserId ? `Chat (${currentOtherUserId.slice(0, 6)}…)` : "Chat";
+
+    await loadMessages(first.id);
+    await markConversationRead(first.id);
+    await renderConversations();
   }
 }
 
-// --- Messages ---
+/* =========================
+   Messages
+========================= */
 async function fetchMessages(convoId) {
   const { data, error } = await supabase
     .from("messages")
@@ -171,15 +222,14 @@ async function fetchMessages(convoId) {
 
 async function loadMessages(convoId) {
   const msgs = await fetchMessages(convoId);
-
-  if (!els.messagesList) return;
+  if (!messagesList) return;
 
   if (!msgs.length) {
-    els.messagesList.innerHTML = `<div class="empty">Aucun message</div>`;
+    messagesList.innerHTML = `<div class="empty">Aucun message</div>`;
     return;
   }
 
-  els.messagesList.innerHTML = msgs
+  messagesList.innerHTML = msgs
     .map((m) => {
       const mine = m.sender_id === me.id;
       return `
@@ -196,44 +246,39 @@ async function loadMessages(convoId) {
     })
     .join("");
 
-  // scroll bas
-  els.messagesList.scrollTop = els.messagesList.scrollHeight;
+  messagesList.scrollTop = messagesList.scrollHeight;
 }
 
 async function sendMessage() {
-  const content = (els.msgInput?.value || "").trim();
+  const content = (msgInput?.value || "").trim();
   if (!content) return;
   if (!currentConversationId) return;
+  if (!currentOtherUserId) return;
 
-  // détermination receiver_id : l'autre participant
-  const receiverId = currentOtherUserId;
-  if (!receiverId) return;
-
-  // option: anti double click
-  els.sendBtn.disabled = true;
+  sendBtn.disabled = true;
 
   const { error } = await supabase.from("messages").insert({
     conversation_id: currentConversationId,
     sender_id: me.id,
-    receiver_id: receiverId,
+    receiver_id: currentOtherUserId,
     content,
     read: false,
   });
 
-  els.sendBtn.disabled = false;
+  sendBtn.disabled = false;
 
   if (error) {
     alert("Erreur envoi: " + error.message);
     return;
   }
 
-  els.msgInput.value = "";
-  // la realtime rafraîchira; mais on peut aussi reload immédiatement pour le côté “fluide”
+  msgInput.value = "";
   await loadMessages(currentConversationId);
+  // met à jour la liste convos/badges
+  await renderConversations();
 }
 
 async function markConversationRead(convoId) {
-  // Marque read=true sur tous les messages reçus (receiver_id = moi) dans la conversation
   const { error } = await supabase
     .from("messages")
     .update({ read: true, read_at: new Date().toISOString() })
@@ -246,28 +291,24 @@ async function markConversationRead(convoId) {
   }
 }
 
-// --- Options utiles ---
+/* =========================
+   Deep link: messages.html?to=<userId>&listing=<listingId?>
+   -> créer/récupérer la conversation
+========================= */
 async function ensureConversation(otherUserId, listingId = null) {
-  // Crée ou récupère une conversation existante entre 2 users (+ listing_id optionnel)
-  // IMPORTANT: on cherche dans conversations via participant1/participant2 (+ listing_id si fourni)
-  const baseOr = `and(participant1_id.eq.${me.id},participant2_id.eq.${otherUserId}),and(participant1_id.eq.${otherUserId},participant2_id.eq.${me.id})`;
+  const pairOr =
+    `and(participant1_id.eq.${me.id},participant2_id.eq.${otherUserId}),` +
+    `and(participant1_id.eq.${otherUserId},participant2_id.eq.${me.id})`;
 
-  let query = supabase
-    .from("conversations")
-    .select("id, participant1_id, participant2_id, listing_id")
-    .or(baseOr);
+  let q = supabase.from("conversations").select("id").or(pairOr).limit(1);
+  if (listingId) q = q.eq("listing_id", listingId);
 
-  if (listingId) query = query.eq("listing_id", listingId);
-
-  const { data: found, error: findErr } = await query.limit(1);
-
-  if (findErr) {
-    console.warn("ensureConversation find error:", findErr);
-  }
+  const { data: found, error: findErr } = await q;
+  if (findErr) console.warn("ensureConversation findErr:", findErr);
 
   if (found && found.length > 0) return found[0].id;
 
-  // create
+  const now = new Date().toISOString();
   const { data: created, error: createErr } = await supabase
     .from("conversations")
     .insert({
@@ -275,34 +316,35 @@ async function ensureConversation(otherUserId, listingId = null) {
       participant2_id: otherUserId,
       listing_id: listingId,
       last_message: null,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      last_message_at: now,
+      updated_at: now,
     })
     .select("id")
     .single();
 
-  if (createErr) {
-    console.warn("ensureConversation create error:", createErr);
-    throw createErr;
-  }
-
+  if (createErr) throw createErr;
   return created.id;
 }
 
-// --- Realtime ---
+/* =========================
+   Realtime
+========================= */
 function setupRealtime() {
-  // Realtime sur messages: quand un message arrive dans une conversation où je suis sender/receiver
-  const channel = supabase
+  // écoute inserts/updates messages pour moi
+  channel = supabase
     .channel(`messages-live-${me.id}`)
     .on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${me.id}` },
       async (payload) => {
-        // Si j'ai la conversation ouverte, on reload + mark read
+        // refresh convos + badge
         await renderConversations();
+
+        // si conversation ouverte = reload + mark read
         if (payload?.new?.conversation_id && payload.new.conversation_id === currentConversationId) {
           await loadMessages(currentConversationId);
           await markConversationRead(currentConversationId);
+          await renderConversations();
         }
       }
     )
@@ -325,39 +367,38 @@ function setupRealtime() {
     .subscribe();
 
   window.addEventListener("beforeunload", () => {
-    supabase.removeChannel(channel);
+    if (channel) supabase.removeChannel(channel);
   });
 }
 
-// --- Bootstrap ---
+/* =========================
+   Boot
+========================= */
 async function init() {
   me = await requireAuth();
   if (!me) return;
 
-  // Badge non-lu global
-  await initUnreadBadge();
-
-  // Logout
-  els.logoutBtn?.addEventListener("click", async () => {
+  // logout
+  logoutBtn?.addEventListener("click", async () => {
     await supabase.auth.signOut();
     window.location.href = "login.html";
   });
 
-  // Envoi
-  els.sendBtn?.addEventListener("click", sendMessage);
-  els.msgInput?.addEventListener("keydown", (e) => {
+  // send
+  sendBtn?.addEventListener("click", sendMessage);
+  msgInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage();
   });
 
-  // Marquer lu
-  els.markReadBtn?.addEventListener("click", async () => {
+  // mark read
+  markReadBtn?.addEventListener("click", async () => {
     if (!currentConversationId) return;
     await markConversationRead(currentConversationId);
     await renderConversations();
     await loadMessages(currentConversationId);
   });
 
-  // Si on arrive avec ?to=<userId>&listing=<listingId> (depuis annonce/profil)
+  // deep link
   const url = new URL(window.location.href);
   const to = url.searchParams.get("to");
   const listing = url.searchParams.get("listing");
@@ -368,12 +409,18 @@ async function init() {
       currentConversationId = convoId;
       currentOtherUserId = to;
     } catch (e) {
+      console.warn(e);
       alert("Impossible de créer la conversation.");
     }
   }
 
   await renderConversations();
   setupRealtime();
+
+  // refresh périodique (sécurité)
+  setInterval(() => {
+    refreshGlobalUnread();
+  }, 15000);
 }
 
 init();
