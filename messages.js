@@ -1,426 +1,370 @@
 // messages.js
 import { supabase } from "./supabaseClient.js";
 
-/* =========================
-   DOM
-========================= */
-const logoutBtn = document.getElementById("logoutBtn");
-const convoList = document.getElementById("convoList");
-const chatTitle = document.getElementById("chatTitle");
-const messagesList = document.getElementById("messagesList");
-const msgInput = document.getElementById("msgInput");
-const sendBtn = document.getElementById("sendBtn");
-const markReadBtn = document.getElementById("markReadBtn");
-const globalUnreadBadge = document.getElementById("globalUnreadBadge");
+const el = (id) => document.getElementById(id);
 
-/* =========================
-   State
-========================= */
-let me = null;
-let currentConversationId = null;
-let currentOtherUserId = null;
-let channel = null;
+const convoList = el("convoList");
+const messagesList = el("messagesList");
+const chatTitle = el("chatTitle");
+const msgInput = el("msgInput");
+const sendBtn = el("sendBtn");
+const logoutBtn = el("logoutBtn");
+const markReadBtn = el("markReadBtn");
+const globalUnreadBadge = el("globalUnreadBadge");
 
-/* =========================
-   Utils
-========================= */
-function esc(str) {
-  return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  }[m]));
+let currentUser = null;
+let activeConversationId = null;
+let activeOtherUserId = null;
+
+function escapeHtml(str = "") {
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function fmtTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function setBadge(el, count) {
-  if (!el) return;
-  if (count > 0) {
-    el.style.display = "inline-flex";
-    el.textContent = String(count > 99 ? "99+" : count);
-  } else {
-    el.style.display = "none";
-    el.textContent = "";
+function formatTime(ts) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
   }
 }
 
-function setActiveConvo(convoId) {
-  document.querySelectorAll(".conversation-item").forEach((x) => x.classList.remove("active"));
-  const row = document.querySelector(`[data-convo-id="${convoId}"]`);
-  if (row) row.classList.add("active");
+function setGlobalUnread(count) {
+  if (!globalUnreadBadge) return;
+  if (!count || count <= 0) {
+    globalUnreadBadge.style.display = "none";
+    globalUnreadBadge.textContent = "";
+    return;
+  }
+  globalUnreadBadge.style.display = "inline-flex";
+  globalUnreadBadge.textContent = String(count);
 }
 
-/* =========================
-   Auth
-========================= */
-async function requireAuth() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data?.user) {
+// --- AUTH ---
+async function requireUser() {
+  const { data } = await supabase.auth.getUser();
+  if (!data?.user) {
     window.location.href = "login.html";
     return null;
   }
   return data.user;
 }
 
-/* =========================
-   Unread count (global)
-========================= */
-async function refreshGlobalUnread() {
-  if (!me) return;
+// --- FETCH PROFILES (pour afficher un nom) ---
+async function getProfileLabel(userId) {
+  // on évite de faire 50 requêtes : cache simple
+  if (!getProfileLabel.cache) getProfileLabel.cache = new Map();
+  const cache = getProfileLabel.cache;
+
+  if (cache.has(userId)) return cache.get(userId);
+
+  const { data, error } = await supabase
+    .from("profiles_public")
+    .select("id, full_name")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    cache.set(userId, userId.slice(0, 8));
+    return userId.slice(0, 8);
+  }
+
+  const label = data?.full_name?.trim() ? data.full_name.trim() : userId.slice(0, 8);
+  cache.set(userId, label);
+  return label;
+}
+
+// --- UNREAD COUNT (global) ---
+async function fetchGlobalUnreadCount() {
+  if (!currentUser) return 0;
+
   const { count, error } = await supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
-    .eq("receiver_id", me.id)
+    .eq("receiver_id", currentUser.id)
     .eq("read", false);
 
   if (error) {
-    console.warn("refreshGlobalUnread error:", error);
-    setBadge(globalUnreadBadge, 0);
-    return;
+    console.warn("Unread count error:", error);
+    return 0;
   }
-  setBadge(globalUnreadBadge, count || 0);
+  return count || 0;
 }
 
-/* =========================
-   Conversations
-========================= */
-async function fetchConversations() {
+// --- UNREAD COUNT (par conversation) ---
+async function fetchUnreadForConversation(conversationId) {
+  if (!currentUser) return 0;
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .eq("receiver_id", currentUser.id)
+    .eq("read", false);
+
+  if (error) {
+    console.warn("Unread per convo error:", error);
+    return 0;
+  }
+  return count || 0;
+}
+
+// --- LIST CONVERSATIONS ---
+async function loadConversations() {
+  convoList.innerHTML = `<div class="empty">Chargement…</div>`;
+
   const { data, error } = await supabase
     .from("conversations")
-    .select("id, listing_id, participant1_id, participant2_id, last_message, last_message_at, updated_at")
-    .or(`participant1_id.eq.${me.id},participant2_id.eq.${me.id}`)
+    .select("id, listing_id, participant1_id, participant2_id, last_message, last_message_at, updated_at, created_at")
+    .or(`participant1_id.eq.${currentUser.id},participant2_id.eq.${currentUser.id}`)
     .order("last_message_at", { ascending: false, nullsFirst: false });
 
   if (error) {
-    console.warn("fetchConversations error:", error);
-    return [];
-  }
-  return data || [];
-}
-
-async function fetchUnreadByConversation() {
-  const { data, error } = await supabase
-    .from("messages")
-    .select("conversation_id, id")
-    .eq("receiver_id", me.id)
-    .eq("read", false);
-
-  if (error) {
-    console.warn("fetchUnreadByConversation error:", error);
-    return new Map();
-  }
-
-  const map = new Map();
-  for (const row of data || []) {
-    const k = row.conversation_id;
-    if (!k) continue;
-    map.set(k, (map.get(k) || 0) + 1);
-  }
-  return map;
-}
-
-async function renderConversations() {
-  const [convos, unreadMap] = await Promise.all([fetchConversations(), fetchUnreadByConversation()]);
-  await refreshGlobalUnread();
-
-  if (!convoList) return;
-
-  if (!convos.length) {
-    convoList.innerHTML = `<div class="empty">Aucune conversation</div>`;
+    console.error("Erreur conversations:", error);
+    convoList.innerHTML = `<div class="empty">Erreur: ${escapeHtml(error.message)}</div>`;
     return;
   }
 
-  convoList.innerHTML = convos
+  if (!data || data.length === 0) {
+    convoList.innerHTML = `<div class="empty">Aucune conversation.</div>`;
+    return;
+  }
+
+  // Préparer UI avec unread
+  const rows = await Promise.all(
+    data.map(async (c) => {
+      const otherId = c.participant1_id === currentUser.id ? c.participant2_id : c.participant1_id;
+      const label = await getProfileLabel(otherId);
+      const unread = await fetchUnreadForConversation(c.id);
+
+      return {
+        ...c,
+        otherId,
+        label,
+        unread,
+      };
+    })
+  );
+
+  // Render
+  convoList.innerHTML = rows
     .map((c) => {
-      const otherId = c.participant1_id === me.id ? c.participant2_id : c.participant1_id;
-      const unread = unreadMap.get(c.id) || 0;
-
-      // Libellé simple (tu peux l'améliorer si tu exposes un profiles_public)
-      const title = otherId ? `Utilisateur ${otherId.slice(0, 6)}…` : "Utilisateur";
-      const last = c.last_message ? esc(c.last_message) : "Aucun message";
-      const time = c.last_message_at ? fmtTime(c.last_message_at) : "";
-
+      const isActive = c.id === activeConversationId;
+      const last = c.last_message ? escapeHtml(c.last_message) : "—";
+      const time = c.last_message_at ? formatTime(c.last_message_at) : "";
       return `
-        <div class="conversation-item" data-convo-id="${c.id}" data-other-id="${otherId || ""}">
-          <div class="row">
-            <div class="left">
-              <div class="name">${title}</div>
-              <div class="preview">${last}</div>
-            </div>
-            <div class="right">
-              <div class="time">${time}</div>
-              ${unread > 0 ? `<div class="pill">${unread > 99 ? "99+" : unread}</div>` : ``}
-            </div>
+        <button class="row ${isActive ? "active" : ""}" data-convo="${c.id}" data-other="${c.otherId}">
+          <div class="rowMain">
+            <div class="rowTitle">${escapeHtml(c.label)}${c.listing_id ? ` <span class="rowSub">• annonce</span>` : ""}</div>
+            <div class="rowSub">${last}</div>
           </div>
-        </div>
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; margin-left:10px;">
+            <div class="rowSub">${escapeHtml(time)}</div>
+            ${c.unread > 0 ? `<div class="pill">${c.unread}</div>` : ``}
+          </div>
+        </button>
       `;
     })
     .join("");
 
-  document.querySelectorAll(".conversation-item").forEach((item) => {
-    item.addEventListener("click", async () => {
-      const convoId = item.getAttribute("data-convo-id");
-      const otherId = item.getAttribute("data-other-id");
-      if (!convoId) return;
-
-      currentConversationId = convoId;
-      currentOtherUserId = otherId || null;
-
-      setActiveConvo(convoId);
-      chatTitle.textContent = otherId ? `Chat (${otherId.slice(0, 6)}…)` : "Chat";
-
-      await loadMessages(convoId);
-      await markConversationRead(convoId); // fluide: lu dès ouverture
-      await renderConversations(); // met à jour les badges
+  // Bind clicks
+  Array.from(convoList.querySelectorAll("[data-convo]")).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const convoId = btn.getAttribute("data-convo");
+      const otherId = btn.getAttribute("data-other");
+      if (!convoId || !otherId) return;
+      await openConversation(convoId, otherId);
     });
   });
-
-  // Auto-select première conversation si aucune sélection
-  if (!currentConversationId && convos[0]?.id) {
-    const first = convos[0];
-    currentConversationId = first.id;
-    currentOtherUserId = first.participant1_id === me.id ? first.participant2_id : first.participant1_id;
-
-    setActiveConvo(first.id);
-    chatTitle.textContent = currentOtherUserId ? `Chat (${currentOtherUserId.slice(0, 6)}…)` : "Chat";
-
-    await loadMessages(first.id);
-    await markConversationRead(first.id);
-    await renderConversations();
-  }
 }
 
-/* =========================
-   Messages
-========================= */
-async function fetchMessages(convoId) {
+// --- OPEN CONVERSATION + LOAD MESSAGES ---
+async function openConversation(conversationId, otherUserId) {
+  activeConversationId = conversationId;
+  activeOtherUserId = otherUserId;
+
+  const label = await getProfileLabel(otherUserId);
+  chatTitle.textContent = label;
+
+  // mettre "active" dans la liste
+  Array.from(convoList.querySelectorAll(".row")).forEach((r) => r.classList.remove("active"));
+  const activeBtn = convoList.querySelector(`[data-convo="${conversationId}"]`);
+  if (activeBtn) activeBtn.classList.add("active");
+
+  await loadMessages(conversationId);
+
+  // Marquer lu automatiquement à l’ouverture
+  await markConversationRead(conversationId);
+
+  // Refresh UI
+  await refreshBadges();
+  await loadConversations();
+}
+
+async function loadMessages(conversationId) {
+  messagesList.innerHTML = `<div class="empty">Chargement…</div>`;
+
   const { data, error } = await supabase
     .from("messages")
-    .select("id, sender_id, receiver_id, content, created_at, read, read_at")
-    .eq("conversation_id", convoId)
+    .select("id, sender_id, receiver_id, content, created_at, read")
+    .eq("conversation_id", conversationId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.warn("fetchMessages error:", error);
-    return [];
-  }
-  return data || [];
-}
-
-async function loadMessages(convoId) {
-  const msgs = await fetchMessages(convoId);
-  if (!messagesList) return;
-
-  if (!msgs.length) {
-    messagesList.innerHTML = `<div class="empty">Aucun message</div>`;
+    console.error("Erreur messages:", error);
+    messagesList.innerHTML = `<div class="empty">Erreur: ${escapeHtml(error.message)}</div>`;
     return;
   }
 
-  messagesList.innerHTML = msgs
+  if (!data || data.length === 0) {
+    messagesList.innerHTML = `<div class="empty">Aucun message.</div>`;
+    return;
+  }
+
+  messagesList.innerHTML = data
     .map((m) => {
-      const mine = m.sender_id === me.id;
+      const mine = m.sender_id === currentUser.id;
       return `
-        <div class="msg ${mine ? "mine" : "theirs"}">
-          <div class="bubble">
-            <div class="text">${esc(m.content)}</div>
-            <div class="meta">
-              <span>${fmtTime(m.created_at)}</span>
-              ${mine ? `<span class="status">${m.read ? "Lu" : "Envoyé"}</span>` : ``}
-            </div>
+        <div class="bubbleWrap ${mine ? "mine" : ""}">
+          <div class="bubble ${mine ? "mine" : ""}">
+            ${escapeHtml(m.content)}
+            <div class="time">${escapeHtml(formatTime(m.created_at))}${mine ? (m.read ? " • lu" : " • envoyé") : ""}</div>
           </div>
         </div>
       `;
     })
     .join("");
 
+  // Scroll bottom
   messagesList.scrollTop = messagesList.scrollHeight;
 }
 
+// --- SEND ---
 async function sendMessage() {
-  const content = (msgInput?.value || "").trim();
+  if (!activeConversationId || !activeOtherUserId) {
+    alert("Sélectionne une conversation.");
+    return;
+  }
+  const content = (msgInput.value || "").trim();
   if (!content) return;
-  if (!currentConversationId) return;
-  if (!currentOtherUserId) return;
 
-  sendBtn.disabled = true;
+  msgInput.value = "";
 
-  const { error } = await supabase.from("messages").insert({
-    conversation_id: currentConversationId,
-    sender_id: me.id,
-    receiver_id: currentOtherUserId,
+  const insertPayload = {
+    conversation_id: activeConversationId,
+    sender_id: currentUser.id,
+    receiver_id: activeOtherUserId,
     content,
-    read: false,
-  });
+    // listing_id optionnel: on peut le récupérer depuis conversations si besoin
+  };
 
-  sendBtn.disabled = false;
-
+  const { error } = await supabase.from("messages").insert(insertPayload);
   if (error) {
+    console.error("Insert message error:", error);
     alert("Erreur envoi: " + error.message);
     return;
   }
 
-  msgInput.value = "";
-  await loadMessages(currentConversationId);
-  // met à jour la liste convos/badges
-  await renderConversations();
+  // UI refresh (le realtime fera aussi le job)
+  await loadMessages(activeConversationId);
+  await refreshBadges();
+  await loadConversations();
 }
 
-async function markConversationRead(convoId) {
+// --- MARK READ ---
+async function markConversationRead(conversationId) {
   const { error } = await supabase
     .from("messages")
     .update({ read: true, read_at: new Date().toISOString() })
-    .eq("conversation_id", convoId)
-    .eq("receiver_id", me.id)
+    .eq("conversation_id", conversationId)
+    .eq("receiver_id", currentUser.id)
     .eq("read", false);
 
-  if (error) {
-    console.warn("markConversationRead error:", error);
+  if (error) console.warn("mark read error:", error);
+}
+
+// --- BADGES ---
+async function refreshBadges() {
+  const total = await fetchGlobalUnreadCount();
+  setGlobalUnread(total);
+
+  // Badge sur la bottom nav (si présent dans index.html)
+  const navBadge = document.getElementById("navMessagesBadge");
+  if (navBadge) {
+    if (!total || total <= 0) {
+      navBadge.style.display = "none";
+      navBadge.textContent = "";
+    } else {
+      navBadge.style.display = "inline-flex";
+      navBadge.textContent = String(total);
+    }
   }
 }
 
-/* =========================
-   Deep link: messages.html?to=<userId>&listing=<listingId?>
-   -> créer/récupérer la conversation
-========================= */
-async function ensureConversation(otherUserId, listingId = null) {
-  const pairOr =
-    `and(participant1_id.eq.${me.id},participant2_id.eq.${otherUserId}),` +
-    `and(participant1_id.eq.${otherUserId},participant2_id.eq.${me.id})`;
-
-  let q = supabase.from("conversations").select("id").or(pairOr).limit(1);
-  if (listingId) q = q.eq("listing_id", listingId);
-
-  const { data: found, error: findErr } = await q;
-  if (findErr) console.warn("ensureConversation findErr:", findErr);
-
-  if (found && found.length > 0) return found[0].id;
-
-  const now = new Date().toISOString();
-  const { data: created, error: createErr } = await supabase
-    .from("conversations")
-    .insert({
-      participant1_id: me.id,
-      participant2_id: otherUserId,
-      listing_id: listingId,
-      last_message: null,
-      last_message_at: now,
-      updated_at: now,
-    })
-    .select("id")
-    .single();
-
-  if (createErr) throw createErr;
-  return created.id;
-}
-
-/* =========================
-   Realtime
-========================= */
+// --- REALTIME ---
 function setupRealtime() {
-  // écoute inserts/updates messages pour moi
-  channel = supabase
-    .channel(`messages-live-${me.id}`)
+  // écoute les inserts/updates sur messages qui concernent l’utilisateur
+  const channel = supabase
+    .channel("rt-messages")
     .on(
       "postgres_changes",
-      { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${me.id}` },
+      { event: "*", schema: "public", table: "messages" },
       async (payload) => {
-        // refresh convos + badge
-        await renderConversations();
+        // si pas loggé -> ignore
+        if (!currentUser) return;
 
-        // si conversation ouverte = reload + mark read
-        if (payload?.new?.conversation_id && payload.new.conversation_id === currentConversationId) {
-          await loadMessages(currentConversationId);
-          await markConversationRead(currentConversationId);
-          await renderConversations();
+        const row = payload.new || payload.old;
+        if (!row) return;
+
+        // Filtre client : seulement si sender ou receiver = moi
+        if (row.sender_id !== currentUser.id && row.receiver_id !== currentUser.id) return;
+
+        // Si je suis dans la convo active → refresh messages + mark read
+        if (activeConversationId && row.conversation_id === activeConversationId) {
+          await loadMessages(activeConversationId);
+          await markConversationRead(activeConversationId);
         }
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "messages", filter: `sender_id=eq.${me.id}` },
-      async () => {
-        await renderConversations();
-        if (currentConversationId) await loadMessages(currentConversationId);
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${me.id}` },
-      async () => {
-        await renderConversations();
-        if (currentConversationId) await loadMessages(currentConversationId);
+
+        await refreshBadges();
+        await loadConversations();
       }
     )
     .subscribe();
 
-  window.addEventListener("beforeunload", () => {
-    if (channel) supabase.removeChannel(channel);
-  });
+  return channel;
 }
 
-/* =========================
-   Boot
-========================= */
-async function init() {
-  me = await requireAuth();
-  if (!me) return;
+// --- EVENTS ---
+sendBtn.addEventListener("click", sendMessage);
+msgInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
 
-  // logout
-  logoutBtn?.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    window.location.href = "login.html";
-  });
+markReadBtn.addEventListener("click", async () => {
+  if (!activeConversationId) return;
+  await markConversationRead(activeConversationId);
+  await refreshBadges();
+  await loadConversations();
+});
 
-  // send
-  sendBtn?.addEventListener("click", sendMessage);
-  msgInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendMessage();
-  });
+logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  window.location.href = "login.html";
+});
 
-  // mark read
-  markReadBtn?.addEventListener("click", async () => {
-    if (!currentConversationId) return;
-    await markConversationRead(currentConversationId);
-    await renderConversations();
-    await loadMessages(currentConversationId);
-  });
+// --- INIT ---
+(async function init() {
+  currentUser = await requireUser();
+  if (!currentUser) return;
 
-  // deep link
-  const url = new URL(window.location.href);
-  const to = url.searchParams.get("to");
-  const listing = url.searchParams.get("listing");
+  await refreshBadges();
+  await loadConversations();
 
-  if (to) {
-    try {
-      const convoId = await ensureConversation(to, listing || null);
-      currentConversationId = convoId;
-      currentOtherUserId = to;
-    } catch (e) {
-      console.warn(e);
-      alert("Impossible de créer la conversation.");
-    }
-  }
-
-  await renderConversations();
   setupRealtime();
-
-  // refresh périodique (sécurité)
-  setInterval(() => {
-    refreshGlobalUnread();
-  }, 15000);
-}
-
-init();
+})();
