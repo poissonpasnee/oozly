@@ -25,9 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          # IMPORTANT: pas de cache sans lockfile
+          # cache: "npm"
 
-      - name: Install
+      - name: Install Dependencies
         run: npm install
 
       - name: Build (static export)
