@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ListingCard from '@/components/ListingCard'
 
-type ProfileRow = {
+type HostPublicRow = {
   id: string
   full_name: string | null
   avatar_url: string | null
@@ -18,10 +18,10 @@ export default function ProfileClient() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
 
-  const userId = params?.id
+  const hostId = params?.id
 
   const [me, setMe] = useState<string | null>(null)
-  const [profile, setProfile] = useState<ProfileRow | null>(null)
+  const [profile, setProfile] = useState<HostPublicRow | null>(null)
   const [listings, setListings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -34,16 +34,15 @@ export default function ProfileClient() {
   }, [supabase])
 
   useEffect(() => {
-    if (!userId) return
+    if (!hostId) return
     ;(async () => {
       setLoading(true)
       setErrorMsg(null)
 
-      // ⚠️ adapte si tu utilises profiles_public
       const { data: p, error: pErr } = await supabase
-        .from('profiles')
+        .from('profiles_public')
         .select('id,full_name,avatar_url,bio')
-        .eq('id', userId)
+        .eq('id', hostId)
         .maybeSingle()
 
       if (pErr || !p) {
@@ -54,18 +53,18 @@ export default function ProfileClient() {
         return
       }
 
-      setProfile(p as ProfileRow)
+      setProfile(p as HostPublicRow)
 
       const { data: l, error: lErr } = await supabase
         .from('listings')
         .select('*')
-        .eq('host_id', userId)
+        .eq('host_id', hostId)
         .order('created_at', { ascending: false })
 
       if (lErr) {
+        console.warn('listings host error:', lErr)
         setListings([])
       } else {
-        // format minimal pour ListingCard si tu l’attends déjà comme sur Home
         const formatted = (l || []).map((item: any) => ({
           id: item.id,
           host_id: item.host_id,
@@ -93,15 +92,15 @@ export default function ProfileClient() {
 
       setLoading(false)
     })()
-  }, [supabase, userId])
+  }, [supabase, hostId])
 
   const contact = () => {
-    if (!userId) return
+    if (!hostId) return
     if (!me) {
       router.push('/login')
       return
     }
-    router.push(`/messages?to=${userId}`)
+    router.push(`/messages?to=${hostId}`)
   }
 
   if (loading) {
@@ -167,9 +166,7 @@ export default function ProfileClient() {
         </div>
 
         <div className="mt-6 flex items-center justify-between">
-          <h2 className="text-lg font-extrabold text-gray-900 dark:text-white">
-            Annonces
-          </h2>
+          <h2 className="text-lg font-extrabold text-gray-900 dark:text-white">Annonces</h2>
           <div className="text-sm text-gray-500">{listings.length}</div>
         </div>
 
