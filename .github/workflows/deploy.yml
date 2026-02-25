@@ -25,11 +25,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install
+        run: npm ci
 
-      - name: Build (static export via next.config.js)
+      - name: Build (Next export via output:export)
         run: npx next build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
