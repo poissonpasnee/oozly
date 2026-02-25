@@ -5,180 +5,200 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Oozly</title>
     <link rel="stylesheet" href="style.css" />
-  </head>
+    <style>
+      /* Bottom Nav (intégré sans toucher ton style.css global) */
+      .bottomNav{
+        position:fixed; left:0; right:0; bottom:0;
+        height:78px;
+        background:rgba(15,17,21,.92);
+        border-top:1px solid rgba(255,255,255,.08);
+        backdrop-filter: blur(10px);
+        display:flex; align-items:center; justify-content:space-around;
+        z-index:999;
+        padding:10px 12px env(safe-area-inset-bottom);
+      }
+      .navItem{
+        flex:1;
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        gap:6px;
+        color:#cbd5e1;
+        text-decoration:none;
+        font-size:12px;
+        position:relative;
+      }
+      .navItem svg{ width:24px; height:24px; }
+      .navItem.active{ color: #f43f5e; }
+      .navBadge{
+        position:absolute; top:6px; right:28%;
+        min-width:18px; height:18px;
+        padding:0 6px;
+        border-radius:999px;
+        background:#ef4444;
+        display:none;
+        align-items:center; justify-content:center;
+        font-size:12px; font-weight:800;
+        color:#fff;
+      }
+      .navCenter{
+        flex:1;
+        display:flex; align-items:center; justify-content:center;
+      }
+      .fab{
+        width:58px; height:58px;
+        border-radius:999px;
+        background:#f43f5e;
+        display:flex; align-items:center; justify-content:center;
+        color:#fff;
+        text-decoration:none;
+        box-shadow:0 10px 30px rgba(244,63,94,.35);
+        transform: translateY(-18px);
+        border: 1px solid rgba(255,255,255,.12);
+      }
+      .fab svg{ width:26px; height:26px; }
+      .pageWrap{
+        padding-bottom:110px; /* pour pas passer sous la barre */
+      }
+      .hero{
+        padding:18px 14px;
+        max-width:1100px;
+        margin:0 auto;
+      }
+      .hero h1{ margin:0 0 8px 0; font-size:22px; }
+      .hero p{ margin:0; color:#a1a1aa; }
+      .cards{
+        padding:12px 14px;
+        max-width:1100px;
+        margin:0 auto;
+        display:grid;
+        gap:12px;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      }
+      .card{
+        background: rgba(18,18,26,.9);
+        border:1px solid rgba(255,255,255,.08);
+        border-radius:18px;
+        padding:14px;
+      }
+      .cardTitle{ font-weight:800; margin-bottom:6px; }
+      .cardSub{ color:#a1a1aa; font-size:14px; }
+    </style>
 
-  <body>
-    <header class="topbar">
-      <div class="title">Oozly</div>
-      <a class="btn" href="profile.html" aria-label="Profil">👤</a>
-    </header>
-
-    <main class="container" style="padding-bottom: 90px;">
-      <section class="hero">
-        <h1 class="h1">Trouver une colocation</h1>
-        <p class="muted">Liste d’annonces (Supabase)</p>
-      </section>
-
-      <section id="listings" class="cards">
-        <div class="empty">Chargement…</div>
-      </section>
-    </main>
-
-    <!-- Bottom Nav (injectée) -->
     <script type="module">
       import { supabase } from "./supabaseClient.js";
 
-      function mountBottomNav(active) {
-        if (document.getElementById("bottomNav")) return;
+      // Badge non-lu dans la barre (global)
+      async function refreshNavUnread() {
+        const { data } = await supabase.auth.getUser();
+        const user = data?.user;
+        const badge = document.getElementById("navMessagesBadge");
+        if (!badge || !user) return;
 
-        const nav = document.createElement("nav");
-        nav.id = "bottomNav";
-        nav.className = "bottomnav";
-        nav.innerHTML = `
-          <a class="bn-item ${active === "home" ? "active" : ""}" href="index.html" aria-label="Accueil">
-            <span class="bn-ico">🏠</span>
-            <span class="bn-txt">Accueil</span>
-          </a>
-
-          <a class="bn-item ${active === "favorites" ? "active" : ""}" href="favorites.html" aria-label="Favoris">
-            <span class="bn-ico">❤️</span>
-            <span class="bn-txt">Favoris</span>
-          </a>
-
-          <a class="bn-item bn-plus ${active === "publish" ? "active" : ""}" href="publish.html" aria-label="Publier">
-            <span class="bn-plus-inner">＋</span>
-          </a>
-
-          <a class="bn-item ${active === "messages" ? "active" : ""}" href="messages.html" aria-label="Messages">
-            <span class="bn-ico">💬</span>
-            <span class="bn-txt">Messages</span>
-            <span class="bn-badge" id="bottomUnreadBadge" style="display:none;"></span>
-          </a>
-
-          <a class="bn-item ${active === "profile" ? "active" : ""}" href="profile.html" aria-label="Profil">
-            <span class="bn-ico">👤</span>
-            <span class="bn-txt">Profil</span>
-          </a>
-        `;
-        document.body.appendChild(nav);
-      }
-
-      function setBadge(el, count) {
-        if (!el) return;
-        if (count > 0) {
-          el.style.display = "inline-flex";
-          el.textContent = String(count > 99 ? "99+" : count);
-        } else {
-          el.style.display = "none";
-          el.textContent = "";
-        }
-      }
-
-      async function refreshUnreadBadge() {
-        const badge = document.getElementById("bottomUnreadBadge");
-
-        const { data: u } = await supabase.auth.getUser();
-        const user = u?.user;
-        if (!user) {
-          setBadge(badge, 0);
-          return;
-        }
-
-        const { count, error } = await supabase
+        const { count } = await supabase
           .from("messages")
           .select("id", { count: "exact", head: true })
           .eq("receiver_id", user.id)
           .eq("read", false);
 
-        if (error) {
-          console.warn("unread badge error:", error);
-          setBadge(badge, 0);
-          return;
+        const n = count || 0;
+        if (n <= 0) {
+          badge.style.display = "none";
+          badge.textContent = "";
+        } else {
+          badge.style.display = "inline-flex";
+          badge.textContent = String(n);
         }
-        setBadge(badge, count || 0);
       }
 
-      async function esc(str) {
-        return (str ?? "").toString().replace(/[&<>"']/g, (m) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#039;",
-        }[m]));
-      }
-
-      async function loadListings() {
-        const container = document.getElementById("listings");
-        if (!container) return;
-
-        const { data, error } = await supabase
-          .from("listings")
-          .select("id, title, location_name, price_per_week, images, host_id, created_at")
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (error) {
-          container.innerHTML = `<div class="empty">Erreur: ${error.message}</div>`;
-          return;
-        }
-
-        if (!data || data.length === 0) {
-          container.innerHTML = `<div class="empty">Aucune annonce</div>`;
-          return;
-        }
-
-        container.innerHTML = data.map((l) => {
-          const img = (l.images && l.images[0]) ? l.images[0] : "";
-          const title = (l.title || "Annonce").toString();
-          const loc = (l.location_name || "Lieu").toString();
-          const price = Number(l.price_per_week || 0);
-
-          // lien contact -> messages.html?to=<host_id>&listing=<listing_id>
-          const contactHref = `messages.html?to=${encodeURIComponent(l.host_id)}&listing=${encodeURIComponent(l.id)}`;
-
-          return `
-            <article class="card">
-              <div class="cardImg">
-                ${img ? `<img src="${img}" alt="" />` : `<div class="placeholder">📷</div>`}
-              </div>
-              <div class="cardBody">
-                <div class="cardTitle">${title.replace(/</g,"&lt;")}</div>
-                <div class="cardMeta">${loc.replace(/</g,"&lt;")}</div>
-                <div class="cardPrice"><b>$${price}</b> / semaine</div>
-
-                <div class="cardActions">
-                  <a class="btnPrimary" href="${contactHref}">Contacter</a>
-                  <a class="btnGhost" href="listing.html?id=${encodeURIComponent(l.id)}">Voir</a>
-                </div>
-              </div>
-            </article>
-          `;
-        }).join("");
-      }
-
-      // Mount + init
-      mountBottomNav("home");
-      loadListings();
-      refreshUnreadBadge();
-
-      // Realtime badge (optionnel)
-      (async () => {
-        const { data: u } = await supabase.auth.getUser();
-        const user = u?.user;
-        if (!user) return;
-
-        const ch = supabase
-          .channel(`badge-${user.id}`)
-          .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` }, refreshUnreadBadge)
-          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` }, refreshUnreadBadge)
+      // Realtime badge
+      function setupRealtimeBadge() {
+        const channel = supabase
+          .channel("rt-badge")
+          .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, async () => {
+            await refreshNavUnread();
+          })
           .subscribe();
+        return channel;
+      }
 
-        window.addEventListener("beforeunload", () => supabase.removeChannel(ch));
+      (async function init() {
+        await refreshNavUnread();
+        setupRealtimeBadge();
       })();
-
-      // refresh périodique
-      setInterval(refreshUnreadBadge, 15000);
     </script>
+  </head>
+
+  <body>
+    <div class="pageWrap">
+      <header class="topbar">
+        <div class="title">Oozly</div>
+        <a class="btn" href="profile.html">Profil</a>
+      </header>
+
+      <section class="hero">
+        <h1>Accueil</h1>
+        <p>Recherche, annonces, favoris et messagerie.</p>
+      </section>
+
+      <!-- Contenu placeholder (tu peux remettre ton feed listings ici si tu veux) -->
+      <section class="cards">
+        <div class="card">
+          <div class="cardTitle">Annonces</div>
+          <div class="cardSub">Parcours les annonces et contacte un hôte.</div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Messages</div>
+          <div class="cardSub">Toutes tes conversations au même endroit.</div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Publier</div>
+          <div class="cardSub">Ajoute une annonce avec le bouton +.</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <nav class="bottomNav" aria-label="Navigation">
+      <a class="navItem active" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 10.5 12 3l9 7.5V21a.75.75 0 0 1-.75.75H3.75A.75.75 0 0 1 3 21v-10.5z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 21v-6a.75.75 0 0 1 .75-.75h4.5A.75.75 0 0 1 15 15v6"/>
+        </svg>
+        <span>Accueil</span>
+      </a>
+
+      <a class="navItem" href="map.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 20 3.5 21.5V6L9 4l6 2 5.5-1.5V20L15 21l-6-2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16M15 6v15"/>
+        </svg>
+        <span>Carte</span>
+      </a>
+
+      <div class="navCenter">
+        <!-- IMPORTANT: adapte publish.html si ton fichier s'appelle autrement -->
+        <a class="fab" href="publish.html" aria-label="Créer une annonce">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+          </svg>
+        </a>
+      </div>
+
+      <a class="navItem" href="messages.html" style="color:#f43f5e;">
+        <span class="navBadge" id="navMessagesBadge"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12c0 4.4-4 8-9 8a10 10 0 0 1-4.3-1L3 20l1.3-3.5A7.5 7.5 0 0 1 3 12c0-4.4 4-8 9-8s9 3.6 9 8z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01"/>
+        </svg>
+        <span>Messages</span>
+      </a>
+
+      <a class="navItem" href="profile.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 7.5a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 20.25a7.5 7.5 0 0 1 15 0"/>
+        </svg>
+        <span>Profil</span>
+      </a>
+    </nav>
   </body>
 </html>
