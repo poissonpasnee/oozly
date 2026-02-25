@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabaseBrowser'import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 type ConversationStateRow = {
@@ -31,8 +30,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 export default function MessagesClient() {
-  const supabase = useMemo(() => createClientComponentClient(), [])
-  const searchParams = useSearchParams()
+// supabase vient de lib/supabaseBrowser  const searchParams = useSearchParams()
 
   const toUserId = searchParams.get('to')
   const listingId = searchParams.get('listing')
